@@ -117,7 +117,8 @@ dotnet_diagnostic.CA1305.severity = none
 dotnet_diagnostic.CA1031.severity = none
 dotnet_diagnostic.CA1848.severity = none
 dotnet_diagnostic.SA1009.severity = none
-
+dotnet_diagnostic.CA1724.severity = none
+dotnet_diagnostic.SA1313.severity = none
 
 # ✅ Оставить включёнными (полезные)
 dotnet_diagnostic.SA1101.severity = suggestion  # Prefix local calls with this

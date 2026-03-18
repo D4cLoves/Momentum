@@ -9,5 +9,4 @@ public sealed class Lessons
 
     public Guid Id { get; private set; }
 
-    public static Lessons Create() => new(Guid.NewGuid());
 }

@@ -1,0 +1,20 @@
+# Build outputs
+**/bin/
+**/obj/
+
+# IDE/editor
+.idea/
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Local CLI/runtime caches
+.dotnet/
+.dotnet-cli/
+*.log
+
+# OS
+Thumbs.db
+Desktop.ini

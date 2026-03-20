@@ -1,13 +1,10 @@
-using Momentum.Core.Configuration;
+﻿using Momentum.Core.Configuration;
 using Serilog;
-using Serilog.Sinks.SystemConsole.Themes;
 
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
     .WriteTo.Console(
-        theme: AnsiConsoleTheme.Code,
-        outputTemplate: "[{Timestamp:HH:mm:ss:fff} {Level:u3}] {Message:lj}{NewLine}{Exception}"
-    )
+        outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
     .CreateBootstrapLogger();
 
 try
@@ -16,7 +13,7 @@ try
 
     WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
-    builder.Services.AddConfiguration(builder.Configuration);
+    builder.Services.AddConfiguration(builder.Configuration, builder);
 
     WebApplication app = builder.Build();
 
@@ -26,12 +23,20 @@ try
 }
 catch (Exception ex)
 {
+    if (string.Equals(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"), "Testing", StringComparison.OrdinalIgnoreCase))
+    {
+        throw;
+    }
+
     Log.Fatal(ex, "Application terminated unexpectedly");
 }
 finally
 {
     Log.CloseAndFlush();
 }
+
+public partial class Program;
+
 
 
 

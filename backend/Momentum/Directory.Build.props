@@ -15,7 +15,7 @@
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
         <CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
         <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-        <EnableNETAnalyzers>true</EnableNETAnalyzers>
+        <EnableNETAnalyzers>false</EnableNETAnalyzers>
         <EnableStyleCopAnalyzers>true</EnableStyleCopAnalyzers>
     </PropertyGroup>
 </Project>

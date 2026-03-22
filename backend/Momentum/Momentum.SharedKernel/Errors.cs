@@ -34,6 +34,8 @@ public static class Errors
     public static Error InvalidSessionDuration { get; } = new("InvalidSessionDuration", ErrorType.Validation, "Session duration must be greater than zero.");
     public static Error TaskAlreadyCompleted { get; } = new("TaskAlreadyCompleted", ErrorType.Conflict, "Task already completed.");
 
+    public static Error TaskNotFound { get; } = new("TaskNotFound", ErrorType.NotFound, "Task was not found.");
+
     public static Error IdentityError(string description) => new("IdentityError", ErrorType.Validation, description);
 
     public static Error PasswordIncorrect { get; } =

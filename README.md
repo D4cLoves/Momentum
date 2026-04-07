@@ -5,6 +5,7 @@ Backend-first ASP.NET Core project with layered architecture and strict static a
 ## Repository layout
 
 - `backend/Momentum` - solution root.
+- `frontend` - React + TypeScript client app.
 - `backend/Momentum/Momentum.Core` - API host and application entry point.
 - `backend/Momentum/Momentum.Domain` - domain model and business entities.
 - `backend/Momentum/Momentum.Infrastructure.Postgres` - infrastructure layer for PostgreSQL integrations.
@@ -32,4 +33,12 @@ Default local URLs are configured in:
 ```powershell
 cd backend/Momentum
 dotnet build Momentum.sln
+```
+
+## Frontend
+
+```powershell
+cd frontend
+npm install
+npm run dev
 ```

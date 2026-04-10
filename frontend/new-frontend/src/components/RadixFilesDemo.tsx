@@ -11,6 +11,7 @@ import {
   SubFiles,
 } from '@/components/animate-ui/components/radix/files';
 import {
+  type CreateProjectPayload,
   createArea,
   createProject,
   deleteArea,
@@ -80,7 +81,6 @@ type DeleteTarget =
   | { kind: 'project'; id: string; name: string };
 
 type ActionDialogMode =
-  | 'add-project'
   | 'rename-area'
   | 'create-session'
   | 'edit-project-name'
@@ -96,6 +96,16 @@ type ActionDialogState = {
   value: string;
   areaId?: string;
   project?: ProjectDto;
+};
+
+type CreateProjectDialogState = {
+  areaId: string;
+  areaName: string;
+  name: string;
+  goal: string;
+  primaryTask: string;
+  targetHours: string;
+  notes: string;
 };
 
 function ContextRowMenu({ children, menu, onContextOpen }: ContextRowMenuProps) {
@@ -160,12 +170,18 @@ export const RadixFilesDemo = ({ onProjectFocus, onTreeMutated }: RadixFilesDemo
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const [createProjectDialog, setCreateProjectDialog] = useState<CreateProjectDialogState | null>(
+    null,
+  );
+  const [isCreateProjectSubmitting, setIsCreateProjectSubmitting] = useState(false);
+
   const [actionDialog, setActionDialog] = useState<ActionDialogState | null>(null);
   const [isActionSubmitting, setIsActionSubmitting] = useState(false);
 
   const [inlineAreaName, setInlineAreaName] = useState<string | null>(null);
   const [isInlineAreaSubmitting, setIsInlineAreaSubmitting] = useState(false);
   const inlineAreaInputRef = useRef<HTMLInputElement | null>(null);
+  const didAutoFocusInlineAreaRef = useRef(false);
 
   const groupedAreas = useMemo<AreaWithProjects[]>(() => {
     const areaMap = new Map<string, AreaWithProjects>(
@@ -238,11 +254,15 @@ export const RadixFilesDemo = ({ onProjectFocus, onTreeMutated }: RadixFilesDemo
 
   useEffect(() => {
     if (inlineAreaName === null) {
+      didAutoFocusInlineAreaRef.current = false;
       return;
     }
 
-    inlineAreaInputRef.current?.focus();
-    inlineAreaInputRef.current?.select();
+    if (!didAutoFocusInlineAreaRef.current) {
+      inlineAreaInputRef.current?.focus();
+      inlineAreaInputRef.current?.select();
+      didAutoFocusInlineAreaRef.current = true;
+    }
   }, [inlineAreaName]);
 
   const refreshAfterAction = useCallback(async () => {
@@ -302,6 +322,53 @@ export const RadixFilesDemo = ({ onProjectFocus, onTreeMutated }: RadixFilesDemo
     }
   }, [deleteTarget, focusProject, refreshAfterAction, selectedProjectId]);
 
+  const submitCreateProjectDialog = useCallback(async () => {
+    if (!createProjectDialog) {
+      return;
+    }
+
+    const name = createProjectDialog.name.trim();
+    if (!name) {
+      window.alert('Project name is required.');
+      return;
+    }
+
+    const goal = createProjectDialog.goal.trim() || 'Focused progress';
+    const primaryTask = createProjectDialog.primaryTask.trim();
+    const notes = createProjectDialog.notes.trim();
+    const rawHours = createProjectDialog.targetHours.trim();
+
+    let targetHours: number | null = null;
+    if (rawHours) {
+      const parsed = Number.parseInt(rawHours, 10);
+      if (Number.isNaN(parsed) || parsed < 0) {
+        window.alert('Target hours must be a valid non-negative number.');
+        return;
+      }
+      targetHours = parsed;
+    }
+
+    const payload: CreateProjectPayload = {
+      areaId: createProjectDialog.areaId,
+      name,
+      goal,
+      primaryTask: primaryTask || null,
+      targetHours,
+      notes: notes || null,
+    };
+
+    setIsCreateProjectSubmitting(true);
+    try {
+      await createProject(payload);
+      setCreateProjectDialog(null);
+      await refreshAfterAction();
+    } catch (err) {
+      window.alert(getReadableError(err, 'Failed to create project.'));
+    } finally {
+      setIsCreateProjectSubmitting(false);
+    }
+  }, [createProjectDialog, refreshAfterAction]);
+
   const submitActionDialog = useCallback(async () => {
     if (!actionDialog) {
       return;
@@ -316,21 +383,6 @@ export const RadixFilesDemo = ({ onProjectFocus, onTreeMutated }: RadixFilesDemo
     setIsActionSubmitting(true);
     try {
       switch (actionDialog.mode) {
-        case 'add-project': {
-          if (!actionDialog.areaId) {
-            break;
-          }
-
-          await createProject({
-            areaId: actionDialog.areaId,
-            name: rawValue,
-            goal: 'Focused progress',
-            primaryTask: null,
-            targetHours: null,
-            notes: null,
-          });
-          break;
-        }
         case 'rename-area': {
           if (!actionDialog.areaId) {
             break;
@@ -476,11 +528,6 @@ export const RadixFilesDemo = ({ onProjectFocus, onTreeMutated }: RadixFilesDemo
                                 setInlineAreaName(null);
                               }
                             }}
-                            onBlur={() => {
-                              if (!isInlineAreaSubmitting) {
-                                setInlineAreaName(null);
-                              }
-                            }}
                             className="h-7 text-xs"
                             placeholder="Имя папки"
                             disabled={isInlineAreaSubmitting}
@@ -507,13 +554,14 @@ export const RadixFilesDemo = ({ onProjectFocus, onTreeMutated }: RadixFilesDemo
                                     <DropdownMenuSeparator />
                                     <DropdownMenuItem
                                       onSelect={() =>
-                                        setActionDialog({
-                                          mode: 'add-project',
-                                          title: 'Добавить проект',
-                                          description: `Новый проект будет создан в папке "${area.name}".`,
-                                          fieldLabel: 'Название проекта',
-                                          value: '',
+                                        setCreateProjectDialog({
                                           areaId: area.id,
+                                          areaName: area.name,
+                                          name: '',
+                                          goal: 'Focused progress',
+                                          primaryTask: '',
+                                          targetHours: '',
+                                          notes: '',
                                         })
                                       }
                                     >
@@ -725,6 +773,121 @@ export const RadixFilesDemo = ({ onProjectFocus, onTreeMutated }: RadixFilesDemo
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog
+        open={createProjectDialog !== null}
+        onOpenChange={(openValue) => {
+          if (!openValue && !isCreateProjectSubmitting) {
+            setCreateProjectDialog(null);
+          }
+        }}
+      >
+        <DialogContent
+          showCloseButton={!isCreateProjectSubmitting}
+          className="sm:max-w-[525px]"
+        >
+          <DialogHeader>
+            <DialogTitle>Create Project</DialogTitle>
+            <DialogDescription>
+              {createProjectDialog
+                ? `New project in folder "${createProjectDialog.areaName}".`
+                : 'Fill project details.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-3">
+            <div className="grid gap-1.5">
+              <label className="text-xs text-muted-foreground">Name</label>
+              <Input
+                value={createProjectDialog?.name ?? ''}
+                onChange={(event) =>
+                  setCreateProjectDialog((previous) =>
+                    previous ? { ...previous, name: event.target.value } : previous,
+                  )
+                }
+                placeholder="Project name"
+                disabled={isCreateProjectSubmitting}
+              />
+            </div>
+
+            <div className="grid gap-1.5">
+              <label className="text-xs text-muted-foreground">Goal</label>
+              <Input
+                value={createProjectDialog?.goal ?? ''}
+                onChange={(event) =>
+                  setCreateProjectDialog((previous) =>
+                    previous ? { ...previous, goal: event.target.value } : previous,
+                  )
+                }
+                placeholder="Project goal"
+                disabled={isCreateProjectSubmitting}
+              />
+            </div>
+
+            <div className="grid gap-1.5">
+              <label className="text-xs text-muted-foreground">Primary Task</label>
+              <Input
+                value={createProjectDialog?.primaryTask ?? ''}
+                onChange={(event) =>
+                  setCreateProjectDialog((previous) =>
+                    previous ? { ...previous, primaryTask: event.target.value } : previous,
+                  )
+                }
+                placeholder="Main task"
+                disabled={isCreateProjectSubmitting}
+              />
+            </div>
+
+            <div className="grid gap-1.5">
+              <label className="text-xs text-muted-foreground">Target Hours</label>
+              <Input
+                value={createProjectDialog?.targetHours ?? ''}
+                onChange={(event) =>
+                  setCreateProjectDialog((previous) =>
+                    previous ? { ...previous, targetHours: event.target.value } : previous,
+                  )
+                }
+                type="number"
+                min={0}
+                placeholder="0"
+                disabled={isCreateProjectSubmitting}
+              />
+            </div>
+
+            <div className="grid gap-1.5">
+              <label className="text-xs text-muted-foreground">Notes</label>
+              <Input
+                value={createProjectDialog?.notes ?? ''}
+                onChange={(event) =>
+                  setCreateProjectDialog((previous) =>
+                    previous ? { ...previous, notes: event.target.value } : previous,
+                  )
+                }
+                placeholder="Optional notes"
+                disabled={isCreateProjectSubmitting}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setCreateProjectDialog(null)}
+              disabled={isCreateProjectSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void submitCreateProjectDialog()}
+              disabled={isCreateProjectSubmitting}
+            >
+              {isCreateProjectSubmitting ? 'Creating...' : 'Create Project'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={actionDialog !== null}

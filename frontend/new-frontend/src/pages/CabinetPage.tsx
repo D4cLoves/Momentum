@@ -4,9 +4,9 @@ import {
   BarChart3,
   User2,
   Settings2,
-  Activity,
   Sparkles,
   Play,
+  Gauge,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -238,7 +238,39 @@ export function CabinetPage() {
     [projectSessions]
   )
 
-  const recentSessions = useMemo(() => projectSessions.slice(0, 6), [projectSessions])
+  const recentSessions = useMemo(() => projectSessions.slice(0, 4), [projectSessions])
+
+  const sessionsLast7 = useMemo(() => {
+    const threshold = Date.now() - 7 * 24 * 60 * 60 * 1000
+    return projectSessions.filter(
+      (session) => new Date(session.startedAt).getTime() >= threshold
+    ).length
+  }, [projectSessions])
+
+  const activeDaysLast14 = useMemo(() => {
+    const threshold = Date.now() - 14 * 24 * 60 * 60 * 1000
+    const uniqueDays = new Set(
+      projectSessions
+        .filter((session) => new Date(session.startedAt).getTime() >= threshold)
+        .map((session) => new Date(session.startedAt).toISOString().slice(0, 10))
+    )
+    return uniqueDays.size
+  }, [projectSessions])
+
+  const momentumScore = useMemo(() => {
+    const raw = sessionsLast7 * 12 + activeDaysLast14 * 4
+    return Math.max(8, Math.min(98, raw))
+  }, [activeDaysLast14, sessionsLast7])
+
+  const momentumLabel = useMemo(() => {
+    if (momentumScore >= 75) {
+      return "Strong pace"
+    }
+    if (momentumScore >= 45) {
+      return "Stable pace"
+    }
+    return "Needs push"
+  }, [momentumScore])
 
   const handleStartSession = useCallback(async () => {
     if (!focusedProject) {
@@ -348,99 +380,157 @@ export function CabinetPage() {
                 )}
 
                 {!workspaceError && !isWorkspaceLoading && focusedProject && (
-                  <div className="grid min-h-0 gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
-                    <article className="rounded-xl border border-border bg-muted/25 p-4">
-                      <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Focused Project</p>
-                      <h3 className="mt-1 text-lg font-semibold">{focusedProject.name}</h3>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {focusedArea ? focusedArea.name : "Area not found"}
-                      </p>
-                      <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                        {focusedProject.goal}
-                      </p>
-
-                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                        <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
-                          <p className="text-[11px] text-muted-foreground">Primary Task</p>
-                          <p className="mt-1 text-sm font-medium">
-                            {focusedProject.primaryTask || "Not set"}
-                          </p>
-                        </div>
-                        <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
-                          <p className="text-[11px] text-muted-foreground">Target Hours</p>
-                          <p className="mt-1 text-sm font-medium">
-                            {focusedProject.targetHours !== null
-                              ? `${focusedProject.targetHours}h`
-                              : "Not set"}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                        <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
-                          <p className="text-[11px] text-muted-foreground">Sessions</p>
-                          <p className="mt-1 text-sm font-medium">{focusedProject.sessionsCount}</p>
-                        </div>
-                        <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
-                          <p className="text-[11px] text-muted-foreground">Last Start</p>
-                          <p className="mt-1 truncate text-sm font-medium">
-                            {projectSessions[0]
-                              ? formatStartedAt(projectSessions[0].startedAt)
-                              : "None"}
-                          </p>
-                        </div>
-                        <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
-                          <p className="text-[11px] text-muted-foreground">State</p>
-                          <p className="mt-1 text-sm font-medium">
-                            {activeSession ? "Active session" : "Ready to launch"}
-                          </p>
-                        </div>
-                      </div>
-                    </article>
-
-                    <div className="grid min-h-0 content-start gap-4">
+                  <div className="grid h-full min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
+                    <div className="grid h-full min-h-0 gap-4 grid-rows-[auto_minmax(0,1fr)]">
                       <article className="rounded-xl border border-border bg-muted/25 p-4">
-                        <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Session Launch</p>
-                        <p className="mt-2 text-sm text-muted-foreground">
-                          Start a focused run for this project directly from workspace.
+                        <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Focused Project</p>
+                        <h3 className="mt-1 text-xl font-semibold">{focusedProject.name}</h3>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {focusedArea ? focusedArea.name : "Area not found"}
                         </p>
-                        {activeSession ? (
-                          <div className="mt-3 rounded-lg border border-border bg-background/70 px-3 py-2 text-xs text-muted-foreground">
-                            Session already active: {activeSession.title || "Untitled session"}
+                        <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                          {focusedProject.goal}
+                        </p>
+
+                        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                          <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                            <p className="text-[11px] text-muted-foreground">Primary Task</p>
+                            <p className="mt-1 line-clamp-2 text-sm font-medium">
+                              {focusedProject.primaryTask || "Not set"}
+                            </p>
                           </div>
-                        ) : null}
-                        {sessionActionError ? (
-                          <div className="mt-3 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-                            {sessionActionError}
+                          <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                            <p className="text-[11px] text-muted-foreground">Target Hours</p>
+                            <p className="mt-1 text-sm font-medium">
+                              {focusedProject.targetHours !== null
+                                ? `${focusedProject.targetHours}h`
+                                : "Not set"}
+                            </p>
                           </div>
-                        ) : null}
-                        <Button
-                          className="mt-3 w-full"
-                          onClick={() => {
-                            void handleStartSession()
-                          }}
-                          disabled={isStartingSession || !!activeSession}
-                        >
-                          <Play className="mr-2 size-4" />
-                          {isStartingSession ? "Starting..." : "Start Session"}
-                        </Button>
+                          <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                            <p className="text-[11px] text-muted-foreground">Sessions</p>
+                            <p className="mt-1 text-sm font-medium">{focusedProject.sessionsCount}</p>
+                          </div>
+                          <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                            <p className="text-[11px] text-muted-foreground">State</p>
+                            <p className="mt-1 text-sm font-medium">
+                              {activeSession ? "Active session" : "Ready to launch"}
+                            </p>
+                          </div>
+                        </div>
+                      </article>
+
+                      <article className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-muted/25 p-5">
+                        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_18%,hsl(var(--primary)/0.18),transparent_42%),radial-gradient(circle_at_88%_82%,hsl(var(--primary)/0.12),transparent_44%)]" />
+                        <div className="relative z-10 flex h-full flex-col">
+                          <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                            Session Command Deck
+                          </p>
+                          <h4 className="mt-2 text-2xl font-semibold leading-tight">
+                            Ready to lock in a focused sprint?
+                          </h4>
+                          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+                            One clean start. One concrete goal. No context-switch circus.
+                            Launch a session and push the project forward.
+                          </p>
+
+                          {activeSession ? (
+                            <div className="mt-4 rounded-xl border border-border bg-background/70 px-4 py-3 text-sm text-muted-foreground">
+                              Active now: <span className="font-medium text-foreground">{activeSession.title || "Untitled session"}</span>
+                            </div>
+                          ) : null}
+                          {sessionActionError ? (
+                            <div className="mt-4 rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                              {sessionActionError}
+                            </div>
+                          ) : null}
+
+                          <div className="mt-5 flex flex-1 items-center justify-center">
+                            <Button
+                              className="h-24 w-full max-w-2xl rounded-full border border-primary/30 bg-primary text-primary-foreground text-xl font-semibold shadow-[0_14px_34px_hsl(var(--primary)/0.45)] transition-all hover:scale-[1.01] hover:shadow-[0_18px_40px_hsl(var(--primary)/0.55)]"
+                              onClick={() => {
+                                void handleStartSession()
+                              }}
+                              disabled={isStartingSession || !!activeSession}
+                            >
+                              <Play className="mr-3 size-5" />
+                              {isStartingSession ? "Starting Session..." : "Start Focus Session"}
+                            </Button>
+                          </div>
+
+                          <div className="mt-5 flex flex-wrap items-center justify-center gap-2 text-xs text-muted-foreground">
+                            <span className="rounded-full border border-border bg-background/70 px-3 py-1">
+                              Deep work mode
+                            </span>
+                            <span className="rounded-full border border-border bg-background/70 px-3 py-1">
+                              Single objective per launch
+                            </span>
+                            <span className="rounded-full border border-border bg-background/70 px-3 py-1">
+                              Zero distractions
+                            </span>
+                          </div>
+                        </div>
+                      </article>
+                    </div>
+
+                    <aside className="grid min-h-0 gap-4 xl:grid-rows-[auto_auto_minmax(0,1fr)]">
+                      <article className="rounded-xl border border-border bg-muted/25 p-4">
+                        <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Focus Health</p>
+                        <div className="mt-3 flex items-center gap-3 rounded-lg border border-border bg-background/70 px-3 py-3">
+                          <div
+                            className="relative flex size-16 items-center justify-center rounded-full"
+                            style={{
+                              background: `conic-gradient(hsl(var(--primary)) ${momentumScore}%, hsl(var(--muted)) ${momentumScore}% 100%)`,
+                            }}
+                          >
+                            <div className="flex size-12 items-center justify-center rounded-full bg-background text-xs font-semibold">
+                              {momentumScore}
+                            </div>
+                          </div>
+                          <div className="min-w-0">
+                            <p className="flex items-center gap-2 text-sm font-medium">
+                              <Gauge className="size-4" />
+                              {momentumLabel}
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Design-only score from session frequency and consistency.
+                            </p>
+                          </div>
+                        </div>
                       </article>
 
                       <article className="rounded-xl border border-border bg-muted/25 p-4">
-                        <p className="flex items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
-                          <Activity className="size-3.5" />
-                          Recent Sessions
-                        </p>
-                        <div className="mt-3 max-h-[250px] space-y-2 overflow-auto pr-1">
+                        <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Project Snapshot</p>
+                        <div className="mt-3 space-y-2">
+                          <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                            <p className="text-[11px] text-muted-foreground">Last Start</p>
+                            <p className="mt-1 text-sm font-medium">
+                              {projectSessions[0]
+                                ? formatStartedAt(projectSessions[0].startedAt)
+                                : "None"}
+                            </p>
+                          </div>
+                          <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                            <p className="text-[11px] text-muted-foreground">Goal Summary</p>
+                            <p className="mt-1 line-clamp-3 text-sm font-medium">
+                              {focusedProject.goal || "No goal set"}
+                            </p>
+                          </div>
+                        </div>
+                      </article>
+
+                      <article className="flex min-h-0 flex-col rounded-xl border border-border bg-muted/25 p-4">
+                        <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Activity Feed</p>
+                        <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-auto pr-1">
                           {recentSessions.length === 0 ? (
                             <div className="rounded-lg border border-border bg-background/70 px-3 py-2 text-sm text-muted-foreground">
-                              No sessions yet for this project.
+                              No recent sessions.
                             </div>
                           ) : (
                             recentSessions.map((session) => (
                               <div
                                 key={session.id}
-                                className="grid gap-1 rounded-lg border border-border bg-background/75 px-3 py-2"
+                                className="rounded-lg border border-border bg-background/75 px-3 py-2"
                               >
                                 <p className="truncate text-sm font-medium">
                                   {session.title || "Untitled session"}
@@ -448,18 +538,12 @@ export function CabinetPage() {
                                 <p className="text-xs text-muted-foreground">
                                   {formatStartedAt(session.startedAt)}
                                 </p>
-                                <div className="flex items-center justify-between text-xs">
-                                  <span className="text-muted-foreground">{session.duration}</span>
-                                  <span className="font-medium">
-                                    {session.isActive ? "Active" : "Completed"}
-                                  </span>
-                                </div>
                               </div>
                             ))
                           )}
                         </div>
                       </article>
-                    </div>
+                    </aside>
                   </div>
                 )}
               </div>

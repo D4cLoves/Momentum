@@ -59,10 +59,20 @@ import { cn } from '@/lib/utils';
 
 type AreaWithProjects = AreaDto & { projects: ProjectDto[] };
 
+type FocusedProjectPayload = {
+  project: ProjectDto;
+  area: AreaDto | null;
+};
+
+type RadixFilesDemoProps = {
+  onProjectFocus?: (payload: FocusedProjectPayload | null) => void;
+  onTreeMutated?: () => void;
+};
+
 type ContextRowMenuProps = {
   children: ReactNode;
   menu: ReactNode;
-  menuClassName?: string;
+  onContextOpen?: () => void;
 };
 
 type DeleteTarget =
@@ -88,21 +98,32 @@ type ActionDialogState = {
   project?: ProjectDto;
 };
 
-function ContextRowMenu({ children, menu, menuClassName }: ContextRowMenuProps) {
+function ContextRowMenu({ children, menu, onContextOpen }: ContextRowMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
+    <DropdownMenu open={isOpen} onOpenChange={setIsOpen} modal={false}>
       <DropdownMenuTrigger asChild>
         <div
           className="rounded-md"
           onPointerDown={(event) => {
-            if (event.pointerType === 'mouse' && event.button === 0) {
-              event.preventDefault();
+            if (event.button !== 0) {
+              return;
+            }
+
+            event.preventDefault();
+            if (isOpen) {
+              setIsOpen(false);
+            }
+          }}
+          onClick={() => {
+            if (isOpen) {
+              setIsOpen(false);
             }
           }}
           onContextMenu={(event) => {
             event.preventDefault();
+            onContextOpen?.();
             setIsOpen(true);
           }}
         >
@@ -113,7 +134,9 @@ function ContextRowMenu({ children, menu, menuClassName }: ContextRowMenuProps) 
       <DropdownMenuContent
         align="start"
         sideOffset={6}
-        className={cn('w-56', menuClassName)}
+        className={cn('w-56')}
+        onPointerDownOutside={() => setIsOpen(false)}
+        onEscapeKeyDown={() => setIsOpen(false)}
       >
         {menu}
       </DropdownMenuContent>
@@ -125,12 +148,14 @@ function getReadableError(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
-export const RadixFilesDemo = () => {
+export const RadixFilesDemo = ({ onProjectFocus, onTreeMutated }: RadixFilesDemoProps) => {
   const [areas, setAreas] = useState<AreaDto[]>([]);
   const [projects, setProjects] = useState<ProjectDto[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isTreeOpen, setIsTreeOpen] = useState(true);
+  const [isRootOpen, setIsRootOpen] = useState(true);
+  const [openAreaNodes, setOpenAreaNodes] = useState<string[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
 
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -142,7 +167,35 @@ export const RadixFilesDemo = () => {
   const [isInlineAreaSubmitting, setIsInlineAreaSubmitting] = useState(false);
   const inlineAreaInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [propertiesProject, setPropertiesProject] = useState<ProjectDto | null>(null);
+  const groupedAreas = useMemo<AreaWithProjects[]>(() => {
+    const areaMap = new Map<string, AreaWithProjects>(
+      areas.map((area) => [area.id, { ...area, projects: [] }]),
+    );
+
+    for (const project of projects) {
+      const targetArea = areaMap.get(project.areaId);
+      if (targetArea) {
+        targetArea.projects.push(project);
+      }
+    }
+
+    return [...areaMap.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [areas, projects]);
+
+  const focusProject = useCallback(
+    (project: ProjectDto | null) => {
+      if (!project) {
+        setSelectedProjectId(null);
+        onProjectFocus?.(null);
+        return;
+      }
+
+      setSelectedProjectId(project.id);
+      const area = areas.find((candidate) => candidate.id === project.areaId) ?? null;
+      onProjectFocus?.({ project, area });
+    },
+    [areas, onProjectFocus],
+  );
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -168,6 +221,22 @@ export const RadixFilesDemo = () => {
   }, [loadData]);
 
   useEffect(() => {
+    const validAreaNodes = new Set(areas.map((area) => `area-${area.id}`));
+    setOpenAreaNodes((previous) => previous.filter((node) => validAreaNodes.has(node)));
+  }, [areas]);
+
+  useEffect(() => {
+    if (!selectedProjectId) {
+      return;
+    }
+
+    const exists = projects.some((project) => project.id === selectedProjectId);
+    if (!exists) {
+      focusProject(null);
+    }
+  }, [focusProject, projects, selectedProjectId]);
+
+  useEffect(() => {
     if (inlineAreaName === null) {
       return;
     }
@@ -176,31 +245,13 @@ export const RadixFilesDemo = () => {
     inlineAreaInputRef.current?.select();
   }, [inlineAreaName]);
 
-  const groupedAreas = useMemo<AreaWithProjects[]>(() => {
-    const areaMap = new Map<string, AreaWithProjects>(
-      areas.map((area) => [area.id, { ...area, projects: [] }]),
-    );
-
-    for (const project of projects) {
-      const targetArea = areaMap.get(project.areaId);
-      if (targetArea) {
-        targetArea.projects.push(project);
-      }
-    }
-
-    return [...areaMap.values()].sort((a, b) => a.name.localeCompare(b.name));
-  }, [areas, projects]);
-
   const refreshAfterAction = useCallback(async () => {
     await loadData();
-  }, [loadData]);
-
-  const openActionDialog = useCallback((state: ActionDialogState) => {
-    setActionDialog(state);
-  }, []);
+    onTreeMutated?.();
+  }, [loadData, onTreeMutated]);
 
   const startInlineAreaCreation = useCallback(() => {
-    setIsTreeOpen(true);
+    setIsRootOpen(true);
     setInlineAreaName('');
   }, []);
 
@@ -238,6 +289,9 @@ export const RadixFilesDemo = () => {
         await deleteArea(deleteTarget.id);
       } else {
         await deleteProject(deleteTarget.id);
+        if (selectedProjectId === deleteTarget.id) {
+          focusProject(null);
+        }
       }
       setDeleteTarget(null);
       await refreshAfterAction();
@@ -246,7 +300,7 @@ export const RadixFilesDemo = () => {
     } finally {
       setIsDeleting(false);
     }
-  }, [deleteTarget, refreshAfterAction]);
+  }, [deleteTarget, focusProject, refreshAfterAction, selectedProjectId]);
 
   const submitActionDialog = useCallback(async () => {
     if (!actionDialog) {
@@ -264,7 +318,7 @@ export const RadixFilesDemo = () => {
       switch (actionDialog.mode) {
         case 'add-project': {
           if (!actionDialog.areaId) {
-            return;
+            break;
           }
 
           await createProject({
@@ -279,7 +333,7 @@ export const RadixFilesDemo = () => {
         }
         case 'rename-area': {
           if (!actionDialog.areaId) {
-            return;
+            break;
           }
 
           await updateAreaName(actionDialog.areaId, rawValue);
@@ -287,7 +341,7 @@ export const RadixFilesDemo = () => {
         }
         case 'create-session': {
           if (!actionDialog.project) {
-            return;
+            break;
           }
 
           await startSession({
@@ -302,7 +356,7 @@ export const RadixFilesDemo = () => {
         case 'edit-project-task':
         case 'edit-project-hours': {
           if (!actionDialog.project) {
-            return;
+            break;
           }
 
           const payload: UpdateProjectPayload = {
@@ -330,6 +384,9 @@ export const RadixFilesDemo = () => {
           }
 
           await updateProject(actionDialog.project.id, payload);
+          if (selectedProjectId === actionDialog.project.id) {
+            focusProject({ ...actionDialog.project, ...payload } as ProjectDto);
+          }
           break;
         }
       }
@@ -341,7 +398,7 @@ export const RadixFilesDemo = () => {
     } finally {
       setIsActionSubmitting(false);
     }
-  }, [actionDialog, refreshAfterAction]);
+  }, [actionDialog, focusProject, refreshAfterAction, selectedProjectId]);
 
   return (
     <>
@@ -367,9 +424,9 @@ export const RadixFilesDemo = () => {
             <div className="rounded-xl border border-border bg-background/70 p-1.5">
               <Files
                 className="w-full p-0"
-                open={isTreeOpen ? ['root-nexus'] : []}
+                open={isRootOpen ? ['root-nexus'] : []}
                 onOpenChange={(openValues) => {
-                  setIsTreeOpen(openValues.includes('root-nexus'));
+                  setIsRootOpen(openValues.includes('root-nexus'));
                 }}
               >
                 <FolderItem value="root-nexus">
@@ -386,13 +443,13 @@ export const RadixFilesDemo = () => {
                   >
                     <button
                       type="button"
-                      onClick={() => setIsTreeOpen((previous) => !previous)}
+                      onClick={() => setIsRootOpen((previous) => !previous)}
                       className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm font-semibold transition-colors hover:bg-accent/60"
                     >
                       <ChevronRight
                         className={cn(
                           'size-4 text-muted-foreground transition-transform',
-                          isTreeOpen && 'rotate-90',
+                          isRootOpen && 'rotate-90',
                         )}
                       />
                       <FileIcon className="size-4" />
@@ -436,7 +493,11 @@ export const RadixFilesDemo = () => {
                           No areas yet. Right-click Command Nexus and add a folder.
                         </div>
                       ) : (
-                        <Files className="w-full p-0.5" defaultOpen={[]}>
+                        <Files
+                          className="w-full p-0.5"
+                          open={openAreaNodes}
+                          onOpenChange={setOpenAreaNodes}
+                        >
                           {groupedAreas.map((area) => (
                             <FolderItem key={area.id} value={`area-${area.id}`}>
                               <ContextRowMenu
@@ -446,7 +507,7 @@ export const RadixFilesDemo = () => {
                                     <DropdownMenuSeparator />
                                     <DropdownMenuItem
                                       onSelect={() =>
-                                        openActionDialog({
+                                        setActionDialog({
                                           mode: 'add-project',
                                           title: 'Добавить проект',
                                           description: `Новый проект будет создан в папке "${area.name}".`,
@@ -460,7 +521,7 @@ export const RadixFilesDemo = () => {
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
                                       onSelect={() =>
-                                        openActionDialog({
+                                        setActionDialog({
                                           mode: 'rename-area',
                                           title: 'Переименовать папку',
                                           description: 'Укажи новое имя папки.',
@@ -503,13 +564,14 @@ export const RadixFilesDemo = () => {
                                       .map((project) => (
                                         <ContextRowMenu
                                           key={project.id}
+                                          onContextOpen={() => focusProject(project)}
                                           menu={
                                             <>
                                               <DropdownMenuLabel>{project.name}</DropdownMenuLabel>
                                               <DropdownMenuSeparator />
                                               <DropdownMenuItem
                                                 onSelect={() =>
-                                                  openActionDialog({
+                                                  setActionDialog({
                                                     mode: 'create-session',
                                                     title: 'Создать сессию',
                                                     description: `Создание новой сессии для проекта "${project.name}".`,
@@ -521,9 +583,7 @@ export const RadixFilesDemo = () => {
                                               >
                                                 Создать сессию
                                               </DropdownMenuItem>
-                                              <DropdownMenuItem
-                                                onSelect={() => setPropertiesProject(project)}
-                                              >
+                                              <DropdownMenuItem onSelect={() => focusProject(project)}>
                                                 Свойства
                                               </DropdownMenuItem>
                                               <DropdownMenuSub>
@@ -533,7 +593,7 @@ export const RadixFilesDemo = () => {
                                                 <DropdownMenuSubContent>
                                                   <DropdownMenuItem
                                                     onSelect={() =>
-                                                      openActionDialog({
+                                                      setActionDialog({
                                                         mode: 'edit-project-name',
                                                         title: 'Изменить название проекта',
                                                         description: 'Введи новое название.',
@@ -547,7 +607,7 @@ export const RadixFilesDemo = () => {
                                                   </DropdownMenuItem>
                                                   <DropdownMenuItem
                                                     onSelect={() =>
-                                                      openActionDialog({
+                                                      setActionDialog({
                                                         mode: 'edit-project-goal',
                                                         title: 'Изменить цель проекта',
                                                         description: 'Обнови цель проекта.',
@@ -561,10 +621,10 @@ export const RadixFilesDemo = () => {
                                                   </DropdownMenuItem>
                                                   <DropdownMenuItem
                                                     onSelect={() =>
-                                                      openActionDialog({
+                                                      setActionDialog({
                                                         mode: 'edit-project-task',
-                                                        title: 'Изменить основную задачу',
-                                                        description: 'Обнови главную задачу проекта.',
+                                                        title: 'Изменить задачу проекта',
+                                                        description: 'Обнови основную задачу проекта.',
                                                         fieldLabel: 'Задача',
                                                         value: project.primaryTask ?? '',
                                                         project,
@@ -575,10 +635,10 @@ export const RadixFilesDemo = () => {
                                                   </DropdownMenuItem>
                                                   <DropdownMenuItem
                                                     onSelect={() =>
-                                                      openActionDialog({
+                                                      setActionDialog({
                                                         mode: 'edit-project-hours',
-                                                        title: 'Изменить целевые часы',
-                                                        description: 'Укажи количество часов.',
+                                                        title: 'Изменить часы проекта',
+                                                        description: 'Укажи целевое количество часов.',
                                                         fieldLabel: 'Часы',
                                                         value: project.targetHours?.toString() ?? '',
                                                         project,
@@ -605,7 +665,16 @@ export const RadixFilesDemo = () => {
                                             </>
                                           }
                                         >
-                                          <FileItem icon={FileIcon}>{project.name}</FileItem>
+                                          <div
+                                            onClick={() => focusProject(project)}
+                                            className={cn(
+                                              'rounded-md',
+                                              selectedProjectId === project.id &&
+                                                'bg-accent/50 ring-1 ring-border',
+                                            )}
+                                          >
+                                            <FileItem icon={FileIcon}>{project.name}</FileItem>
+                                          </div>
                                         </ContextRowMenu>
                                       ))
                                   )}
@@ -638,7 +707,7 @@ export const RadixFilesDemo = () => {
             <AlertDialogDescription>
               {deleteTarget
                 ? `Удалить "${deleteTarget.name}"? Действие нельзя отменить.`
-                : 'Удаление элемента.'}
+                : 'Delete item.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -672,9 +741,7 @@ export const RadixFilesDemo = () => {
           </DialogHeader>
 
           <div className="grid gap-2">
-            <label className="text-xs text-muted-foreground">
-              {actionDialog?.fieldLabel}
-            </label>
+            <label className="text-xs text-muted-foreground">{actionDialog?.fieldLabel}</label>
             <Input
               value={actionDialog?.value ?? ''}
               onChange={(event) => {
@@ -715,52 +782,6 @@ export const RadixFilesDemo = () => {
               disabled={isActionSubmitting}
             >
               {isActionSubmitting ? 'Сохранение...' : 'Сохранить'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={propertiesProject !== null}
-        onOpenChange={(openValue) => {
-          if (!openValue) {
-            setPropertiesProject(null);
-          }
-        }}
-      >
-        <DialogContent className="sm:max-w-[480px]">
-          <DialogHeader>
-            <DialogTitle>Свойства проекта</DialogTitle>
-            <DialogDescription>Текущие данные проекта.</DialogDescription>
-          </DialogHeader>
-
-          <div className="grid gap-3 text-sm">
-            <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
-              <p className="text-xs text-muted-foreground">Название</p>
-              <p className="mt-1 font-medium">{propertiesProject?.name}</p>
-            </div>
-            <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
-              <p className="text-xs text-muted-foreground">Цель</p>
-              <p className="mt-1 font-medium">{propertiesProject?.goal}</p>
-            </div>
-            <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
-              <p className="text-xs text-muted-foreground">Основная задача</p>
-              <p className="mt-1 font-medium">{propertiesProject?.primaryTask || 'Not set'}</p>
-            </div>
-            <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
-              <p className="text-xs text-muted-foreground">Целевые часы</p>
-              <p className="mt-1 font-medium">
-                {propertiesProject?.targetHours !== null &&
-                propertiesProject?.targetHours !== undefined
-                  ? `${propertiesProject.targetHours}h`
-                  : 'Not set'}
-              </p>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setPropertiesProject(null)}>
-              Закрыть
             </Button>
           </DialogFooter>
         </DialogContent>

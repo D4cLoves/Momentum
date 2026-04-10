@@ -1,4 +1,4 @@
-﻿import React from "react"
+import React, { useCallback, useEffect, useMemo, useState } from "react"
 import {
   HomeIcon,
   BarChart3,
@@ -8,10 +8,11 @@ import {
   Target,
   ListTodo,
   Activity,
+  Sparkles,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { buttonVariants } from "@/components/ui/button"
+import { buttonVariants, Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import {
   Tooltip,
@@ -22,8 +23,21 @@ import {
 import { Dock, DockIcon } from "@/components/ui/dock"
 import { ThemeTogglerButton } from "@/components/animate-ui/components/buttons/theme-toggler"
 import { RadixFilesDemo } from "@/components/RadixFilesDemo"
+import {
+  getAreas,
+  getProjects,
+  getSessions,
+  type AreaDto,
+  type ProjectDto,
+  type SessionDto,
+} from "@/api/cabinetApi"
 
 type IconProps = React.HTMLAttributes<SVGElement>
+
+type FocusedProject = {
+  project: ProjectDto
+  area: AreaDto | null
+}
 
 const Icons = {
   github: (props: IconProps) => (
@@ -49,23 +63,6 @@ const DATA = {
     },
   },
 }
-
-const projectPreview = {
-  name: "Momentum Client Redesign",
-  area: "Command Center / yaya",
-  goal: "Собрать удобный рабочий кабинет с чистым UX и быстрыми действиями по проектам.",
-  primaryTask: "Связать project explorer с диалогами и CRUD.",
-  targetHours: 24,
-  spentHours: 9.5,
-  completion: 40,
-}
-
-const recentSessions = [
-  { id: "s1", title: "Проектные диалоги", duration: "1ч 34м", startedAt: "Сегодня, 11:20", status: "Завершена" },
-  { id: "s2", title: "Контекстные меню", duration: "57м", startedAt: "Сегодня, 09:40", status: "Завершена" },
-  { id: "s3", title: "Выравнивание layout", duration: "42м", startedAt: "Вчера, 19:10", status: "Завершена" },
-  { id: "s4", title: "Стили инпутов", duration: "31м", startedAt: "Вчера, 17:35", status: "Завершена" },
-]
 
 function DockDemo() {
   return (
@@ -149,7 +146,92 @@ function DockDemo() {
   )
 }
 
+function formatStartedAt(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+
+  return date.toLocaleString()
+}
+
 export function CabinetPage() {
+  const [areas, setAreas] = useState<AreaDto[]>([])
+  const [projects, setProjects] = useState<ProjectDto[]>([])
+  const [sessions, setSessions] = useState<SessionDto[]>([])
+  const [isWorkspaceLoading, setIsWorkspaceLoading] = useState(true)
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null)
+  const [focusedProjectId, setFocusedProjectId] = useState<string | null>(null)
+  const [focusedAreaId, setFocusedAreaId] = useState<string | null>(null)
+
+  const loadWorkspace = useCallback(async () => {
+    setIsWorkspaceLoading(true)
+    setWorkspaceError(null)
+    try {
+      const [nextAreas, nextProjects, nextSessions] = await Promise.all([
+        getAreas(),
+        getProjects(),
+        getSessions(),
+      ])
+      setAreas(nextAreas)
+      setProjects(nextProjects)
+      setSessions(nextSessions)
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to load project workspace"
+      setWorkspaceError(message)
+    } finally {
+      setIsWorkspaceLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadWorkspace()
+  }, [loadWorkspace])
+
+  const handleProjectFocus = useCallback((payload: FocusedProject | null) => {
+    if (!payload) {
+      setFocusedProjectId(null)
+      setFocusedAreaId(null)
+      return
+    }
+
+    setFocusedProjectId(payload.project.id)
+    setFocusedAreaId(payload.area?.id ?? null)
+  }, [])
+
+  const focusedProject = useMemo(() => {
+    if (!focusedProjectId) {
+      return null
+    }
+    return projects.find((project) => project.id === focusedProjectId) || null
+  }, [focusedProjectId, projects])
+
+  const focusedArea = useMemo(() => {
+    if (focusedAreaId) {
+      return areas.find((area) => area.id === focusedAreaId) || null
+    }
+
+    if (!focusedProject) {
+      return null
+    }
+    return areas.find((area) => area.id === focusedProject.areaId) || null
+  }, [areas, focusedAreaId, focusedProject])
+
+  const projectSessions = useMemo(() => {
+    if (!focusedProject) {
+      return []
+    }
+
+    return sessions
+      .filter((session) => session.projectId === focusedProject.id)
+      .slice()
+      .sort(
+        (left, right) =>
+          new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime()
+      )
+  }, [focusedProject, sessions])
+
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
       <div className="pointer-events-none fixed inset-x-0 bottom-[18px] z-50 flex justify-center px-4">
@@ -173,14 +255,16 @@ export function CabinetPage() {
                       VL
                     </div>
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">Привет, Влад</p>
-                      <p className="truncate text-xs text-muted-foreground">Поехали делать фокус.</p>
+                      <p className="truncate text-sm font-semibold">Welcome back, Vlad</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        Pick a project from the tree to inspect details.
+                      </p>
                     </div>
                   </div>
 
                   <div className="flex min-h-0 flex-col items-center justify-center rounded-xl border border-border bg-muted/40 px-3 py-4 text-center">
-                    <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Фокус за сегодня</p>
-                    <p className="mt-2 text-[clamp(32px,3.4vw,52px)] font-semibold leading-none [font-variant-numeric:tabular-nums]">1ч 34м</p>
+                    <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Today Focus</p>
+                    <p className="mt-2 text-[clamp(32px,3.4vw,52px)] font-semibold leading-none [font-variant-numeric:tabular-nums]">1h 34m</p>
                   </div>
 
                   <div className="rounded-lg border border-border bg-muted/25 px-3 py-2">
@@ -191,7 +275,12 @@ export function CabinetPage() {
               </section>
 
               <div className="min-h-0 flex-1">
-                <RadixFilesDemo />
+                <RadixFilesDemo
+                  onProjectFocus={handleProjectFocus}
+                  onTreeMutated={() => {
+                    void loadWorkspace()
+                  }}
+                />
               </div>
             </div>
 
@@ -201,64 +290,137 @@ export function CabinetPage() {
               </div>
 
               <div className="grid min-h-0 flex-1 grid-rows-[auto_1fr] gap-4 p-4">
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">
-                  <article className="rounded-xl border border-border bg-muted/25 p-4">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Активный проект</p>
-                    <h3 className="mt-1 text-lg font-semibold">{projectPreview.name}</h3>
-                    <p className="mt-1 text-xs text-muted-foreground">{projectPreview.area}</p>
-                    <p className="mt-3 text-sm leading-6 text-muted-foreground">{projectPreview.goal}</p>
-
-                    <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                      <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
-                        <p className="text-[11px] text-muted-foreground">Главная задача</p>
-                        <p className="mt-1 text-sm font-medium">{projectPreview.primaryTask}</p>
-                      </div>
-                      <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
-                        <p className="text-[11px] text-muted-foreground">Прогресс</p>
-                        <p className="mt-1 text-sm font-medium">{projectPreview.completion}%</p>
-                      </div>
-                    </div>
-                  </article>
-
-                  <article className="rounded-xl border border-border bg-muted/25 p-4">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Сводка</p>
-                    <div className="mt-3 space-y-2">
-                      <div className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2">
-                        <span className="flex items-center gap-2 text-xs text-muted-foreground"><Clock3 className="size-3.5" />План часов</span>
-                        <span className="text-sm font-medium">{projectPreview.targetHours}h</span>
-                      </div>
-                      <div className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2">
-                        <span className="flex items-center gap-2 text-xs text-muted-foreground"><Activity className="size-3.5" />Потрачено</span>
-                        <span className="text-sm font-medium">{projectPreview.spentHours}h</span>
-                      </div>
-                      <div className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2">
-                        <span className="flex items-center gap-2 text-xs text-muted-foreground"><Target className="size-3.5" />Осталось</span>
-                        <span className="text-sm font-medium">{projectPreview.targetHours - projectPreview.spentHours}h</span>
-                      </div>
-                    </div>
-                  </article>
-                </div>
-
-                <article className="flex min-h-0 flex-col rounded-xl border border-border bg-muted/25">
-                  <div className="border-b border-border px-4 py-3">
-                    <p className="flex items-center gap-2 text-sm font-semibold"><ListTodo className="size-4" />История сессий</p>
+                {workspaceError && (
+                  <div className="rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                    {workspaceError}
                   </div>
+                )}
 
-                  <div className="min-h-0 flex-1 overflow-auto p-3">
-                    <div className="space-y-2">
-                      {recentSessions.map((session) => (
-                        <div key={session.id} className="grid gap-2 rounded-lg border border-border bg-background/75 px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium">{session.title}</p>
-                            <p className="text-xs text-muted-foreground">{session.startedAt}</p>
+                {!workspaceError && isWorkspaceLoading && (
+                  <div className="rounded-xl border border-border bg-background/70 px-4 py-3 text-sm text-muted-foreground">
+                    Loading project workspace...
+                  </div>
+                )}
+
+                {!workspaceError && !isWorkspaceLoading && !focusedProject && (
+                  <article className="flex min-h-0 flex-col items-center justify-center rounded-xl border border-border bg-muted/25 p-8 text-center">
+                    <Sparkles className="size-6 text-muted-foreground" />
+                    <h3 className="mt-3 text-lg font-semibold">Project Details Panel</h3>
+                    <p className="mt-2 max-w-xl text-sm text-muted-foreground">
+                      Right-click a project in the files tree, or open its menu and press
+                      <span className="font-medium text-foreground"> Properties</span>.
+                      The focused project details will appear here.
+                    </p>
+                  </article>
+                )}
+
+                {!workspaceError && !isWorkspaceLoading && focusedProject && (
+                  <>
+                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.85fr)]">
+                      <article className="rounded-xl border border-border bg-muted/25 p-4">
+                        <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Focused Project</p>
+                        <h3 className="mt-1 text-lg font-semibold">{focusedProject.name}</h3>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {focusedArea ? focusedArea.name : "Area not found"}
+                        </p>
+                        <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                          {focusedProject.goal}
+                        </p>
+
+                        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                          <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                            <p className="text-[11px] text-muted-foreground">Primary Task</p>
+                            <p className="mt-1 text-sm font-medium">
+                              {focusedProject.primaryTask || "Not set"}
+                            </p>
                           </div>
-                          <p className="text-xs text-muted-foreground sm:self-center">{session.duration}</p>
-                          <p className="text-xs font-medium sm:self-center">{session.status}</p>
+                          <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                            <p className="text-[11px] text-muted-foreground">Target Hours</p>
+                            <p className="mt-1 text-sm font-medium">
+                              {focusedProject.targetHours !== null
+                                ? `${focusedProject.targetHours}h`
+                                : "Not set"}
+                            </p>
+                          </div>
                         </div>
-                      ))}
+                      </article>
+
+                      <article className="rounded-xl border border-border bg-muted/25 p-4">
+                        <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Focus Actions</p>
+                        <div className="mt-3 space-y-2">
+                          <div className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2">
+                            <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <ListTodo className="size-3.5" /> Sessions logged
+                            </span>
+                            <span className="text-sm font-medium">{focusedProject.sessionsCount}</span>
+                          </div>
+                          <div className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2">
+                            <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <Clock3 className="size-3.5" /> Last session
+                            </span>
+                            <span className="text-sm font-medium">
+                              {projectSessions[0] ? formatStartedAt(projectSessions[0].startedAt) : "None"}
+                            </span>
+                          </div>
+                          <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                            <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <Target className="size-3.5" />
+                              Session Focus
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Session creation flow will be upgraded next. For now, use the project
+                              context menu to create a session.
+                            </p>
+                          </div>
+                        </div>
+                        <Button className="mt-3 w-full" variant="outline" disabled>
+                          Create Session (Soon)
+                        </Button>
+                      </article>
                     </div>
-                  </div>
-                </article>
+
+                    <article className="flex min-h-0 flex-col rounded-xl border border-border bg-muted/25">
+                      <div className="border-b border-border px-4 py-3">
+                        <p className="flex items-center gap-2 text-sm font-semibold">
+                          <Activity className="size-4" />
+                          Project Sessions
+                        </p>
+                      </div>
+
+                      <div className="min-h-0 flex-1 overflow-auto p-3">
+                        {projectSessions.length === 0 ? (
+                          <div className="rounded-lg border border-border bg-background/70 px-3 py-2 text-sm text-muted-foreground">
+                            No sessions yet for this project.
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {projectSessions.map((session) => (
+                              <div
+                                key={session.id}
+                                className="grid gap-2 rounded-lg border border-border bg-background/75 px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto_auto]"
+                              >
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-medium">
+                                    {session.title || "Untitled session"}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {formatStartedAt(session.startedAt)}
+                                  </p>
+                                </div>
+                                <p className="text-xs text-muted-foreground sm:self-center">
+                                  {session.duration}
+                                </p>
+                                <p className="text-xs font-medium sm:self-center">
+                                  {session.isActive ? "Active" : "Completed"}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </article>
+                  </>
+                )}
               </div>
             </section>
           </div>

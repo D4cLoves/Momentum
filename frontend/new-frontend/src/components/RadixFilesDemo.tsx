@@ -53,6 +53,11 @@ function ContextRowMenu({ children, menu, menuClassName }: ContextRowMenuProps) 
       <DropdownMenuTrigger asChild>
         <div
           className="rounded-md"
+          onPointerDown={(event) => {
+            if (event.pointerType === 'mouse' && event.button === 0) {
+              event.preventDefault();
+            }
+          }}
           onContextMenu={(event) => {
             event.preventDefault();
             setIsOpen(true);
@@ -459,13 +464,13 @@ export const RadixFilesDemo = () => {
             </ContextRowMenu>
 
             {isTreeOpen && (
-              <div className="ml-2 mt-1 border-l border-border pl-1">
+              <div className="ml-1 mt-0 border-l border-border pl-0.5">
                 {groupedAreas.length === 0 ? (
                   <div className="px-2 py-2 text-xs text-muted-foreground">
                     No areas yet. Right-click Command Nexus and add a folder.
                   </div>
                 ) : (
-                  <Files className="w-full" defaultOpen={defaultOpen}>
+                  <Files className="w-full p-0.5" defaultOpen={defaultOpen}>
                     {groupedAreas.map((area) => (
                       <FolderItem key={area.id} value={`area-${area.id}`}>
                         <ContextRowMenu

@@ -39,6 +39,12 @@ export type SessionDto = {
   tasks: SessionTaskDto[]
 }
 
+export type StartSessionPayload = {
+  projectId: string
+  title: string
+  goal: string
+}
+
 export type CreateProjectPayload = {
   areaId: string
   name: string
@@ -109,4 +115,11 @@ export function deleteArea(areaId: string): Promise<void> {
 
 export function getSessions(): Promise<SessionDto[]> {
   return apiRequest<SessionDto[]>("/api/sessions")
+}
+
+export function startSession(payload: StartSessionPayload): Promise<SessionDto> {
+  return apiRequest<SessionDto>("/api/sessions", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  })
 }

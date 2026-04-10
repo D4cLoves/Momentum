@@ -4,11 +4,9 @@ import {
   BarChart3,
   User2,
   Settings2,
-  Clock3,
-  Target,
-  ListTodo,
   Activity,
   Sparkles,
+  Play,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -27,6 +25,7 @@ import {
   getAreas,
   getProjects,
   getSessions,
+  startSession,
   type AreaDto,
   type ProjectDto,
   type SessionDto,
@@ -163,6 +162,8 @@ export function CabinetPage() {
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
   const [focusedProjectId, setFocusedProjectId] = useState<string | null>(null)
   const [focusedAreaId, setFocusedAreaId] = useState<string | null>(null)
+  const [isStartingSession, setIsStartingSession] = useState(false)
+  const [sessionActionError, setSessionActionError] = useState<string | null>(null)
 
   const loadWorkspace = useCallback(async () => {
     setIsWorkspaceLoading(true)
@@ -232,6 +233,38 @@ export function CabinetPage() {
       )
   }, [focusedProject, sessions])
 
+  const activeSession = useMemo(
+    () => projectSessions.find((session) => session.isActive) || null,
+    [projectSessions]
+  )
+
+  const recentSessions = useMemo(() => projectSessions.slice(0, 6), [projectSessions])
+
+  const handleStartSession = useCallback(async () => {
+    if (!focusedProject) {
+      return
+    }
+
+    setSessionActionError(null)
+    setIsStartingSession(true)
+    try {
+      await startSession({
+        projectId: focusedProject.id,
+        title: focusedProject.primaryTask
+          ? `Focus: ${focusedProject.primaryTask}`
+          : `Focus: ${focusedProject.name}`,
+        goal: focusedProject.goal || `Advance ${focusedProject.name}`,
+      })
+      await loadWorkspace()
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to start a new session"
+      setSessionActionError(message)
+    } finally {
+      setIsStartingSession(false)
+    }
+  }, [focusedProject, loadWorkspace])
+
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
       <div className="pointer-events-none fixed inset-x-0 bottom-[18px] z-50 flex justify-center px-4">
@@ -246,7 +279,7 @@ export function CabinetPage() {
             <div className="flex h-full w-[min(340px,26vw)] min-w-[240px] flex-none flex-col gap-4">
               <section className="supports-backdrop-blur:bg-white/10 supports-backdrop-blur:dark:bg-black/10 flex h-[390px] flex-none flex-col rounded-2xl border shadow-sm backdrop-blur-md">
                 <div className="border-b border-border px-4 py-3">
-                  <p className="text-center text-sm font-semibold">Focus Summary</p>
+                  <p className="text-sm font-semibold">Focus Summary</p>
                 </div>
 
                 <div className="grid h-full grid-rows-[auto_1fr_auto] gap-4 p-4">
@@ -285,11 +318,11 @@ export function CabinetPage() {
             </div>
 
             <section className="supports-backdrop-blur:bg-white/10 supports-backdrop-blur:dark:bg-black/10 flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border shadow-sm backdrop-blur-md">
-              <div className="border-b border-border px-5 py-4">
+              <div className="border-b border-border px-4 py-3">
                 <p className="text-sm font-semibold">Project Workspace</p>
               </div>
 
-              <div className="grid min-h-0 flex-1 grid-rows-[auto_1fr] gap-4 p-4">
+              <div className="flex min-h-0 flex-1 flex-col gap-4 p-4">
                 {workspaceError && (
                   <div className="rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
                     {workspaceError}
@@ -315,111 +348,119 @@ export function CabinetPage() {
                 )}
 
                 {!workspaceError && !isWorkspaceLoading && focusedProject && (
-                  <>
-                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.85fr)]">
-                      <article className="rounded-xl border border-border bg-muted/25 p-4">
-                        <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Focused Project</p>
-                        <h3 className="mt-1 text-lg font-semibold">{focusedProject.name}</h3>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {focusedArea ? focusedArea.name : "Area not found"}
-                        </p>
-                        <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                          {focusedProject.goal}
-                        </p>
+                  <div className="grid min-h-0 gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
+                    <article className="rounded-xl border border-border bg-muted/25 p-4">
+                      <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Focused Project</p>
+                      <h3 className="mt-1 text-lg font-semibold">{focusedProject.name}</h3>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {focusedArea ? focusedArea.name : "Area not found"}
+                      </p>
+                      <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                        {focusedProject.goal}
+                      </p>
 
-                        <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                          <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
-                            <p className="text-[11px] text-muted-foreground">Primary Task</p>
-                            <p className="mt-1 text-sm font-medium">
-                              {focusedProject.primaryTask || "Not set"}
-                            </p>
-                          </div>
-                          <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
-                            <p className="text-[11px] text-muted-foreground">Target Hours</p>
-                            <p className="mt-1 text-sm font-medium">
-                              {focusedProject.targetHours !== null
-                                ? `${focusedProject.targetHours}h`
-                                : "Not set"}
-                            </p>
-                          </div>
+                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                        <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                          <p className="text-[11px] text-muted-foreground">Primary Task</p>
+                          <p className="mt-1 text-sm font-medium">
+                            {focusedProject.primaryTask || "Not set"}
+                          </p>
                         </div>
-                      </article>
-
-                      <article className="rounded-xl border border-border bg-muted/25 p-4">
-                        <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Focus Actions</p>
-                        <div className="mt-3 space-y-2">
-                          <div className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2">
-                            <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                              <ListTodo className="size-3.5" /> Sessions logged
-                            </span>
-                            <span className="text-sm font-medium">{focusedProject.sessionsCount}</span>
-                          </div>
-                          <div className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2">
-                            <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                              <Clock3 className="size-3.5" /> Last session
-                            </span>
-                            <span className="text-sm font-medium">
-                              {projectSessions[0] ? formatStartedAt(projectSessions[0].startedAt) : "None"}
-                            </span>
-                          </div>
-                          <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
-                            <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                              <Target className="size-3.5" />
-                              Session Focus
-                            </p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              Session creation flow will be upgraded next. For now, use the project
-                              context menu to create a session.
-                            </p>
-                          </div>
+                        <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                          <p className="text-[11px] text-muted-foreground">Target Hours</p>
+                          <p className="mt-1 text-sm font-medium">
+                            {focusedProject.targetHours !== null
+                              ? `${focusedProject.targetHours}h`
+                              : "Not set"}
+                          </p>
                         </div>
-                        <Button className="mt-3 w-full" variant="outline" disabled>
-                          Create Session (Soon)
-                        </Button>
-                      </article>
-                    </div>
-
-                    <article className="flex min-h-0 flex-col rounded-xl border border-border bg-muted/25">
-                      <div className="border-b border-border px-4 py-3">
-                        <p className="flex items-center gap-2 text-sm font-semibold">
-                          <Activity className="size-4" />
-                          Project Sessions
-                        </p>
                       </div>
 
-                      <div className="min-h-0 flex-1 overflow-auto p-3">
-                        {projectSessions.length === 0 ? (
-                          <div className="rounded-lg border border-border bg-background/70 px-3 py-2 text-sm text-muted-foreground">
-                            No sessions yet for this project.
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            {projectSessions.map((session) => (
-                              <div
-                                key={session.id}
-                                className="grid gap-2 rounded-lg border border-border bg-background/75 px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto_auto]"
-                              >
-                                <div className="min-w-0">
-                                  <p className="truncate text-sm font-medium">
-                                    {session.title || "Untitled session"}
-                                  </p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {formatStartedAt(session.startedAt)}
-                                  </p>
-                                </div>
-                                <p className="text-xs text-muted-foreground sm:self-center">
-                                  {session.duration}
-                                </p>
-                                <p className="text-xs font-medium sm:self-center">
-                                  {session.isActive ? "Active" : "Completed"}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                        <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                          <p className="text-[11px] text-muted-foreground">Sessions</p>
+                          <p className="mt-1 text-sm font-medium">{focusedProject.sessionsCount}</p>
+                        </div>
+                        <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                          <p className="text-[11px] text-muted-foreground">Last Start</p>
+                          <p className="mt-1 truncate text-sm font-medium">
+                            {projectSessions[0]
+                              ? formatStartedAt(projectSessions[0].startedAt)
+                              : "None"}
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                          <p className="text-[11px] text-muted-foreground">State</p>
+                          <p className="mt-1 text-sm font-medium">
+                            {activeSession ? "Active session" : "Ready to launch"}
+                          </p>
+                        </div>
                       </div>
                     </article>
-                  </>
+
+                    <div className="grid min-h-0 content-start gap-4">
+                      <article className="rounded-xl border border-border bg-muted/25 p-4">
+                        <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Session Launch</p>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          Start a focused run for this project directly from workspace.
+                        </p>
+                        {activeSession ? (
+                          <div className="mt-3 rounded-lg border border-border bg-background/70 px-3 py-2 text-xs text-muted-foreground">
+                            Session already active: {activeSession.title || "Untitled session"}
+                          </div>
+                        ) : null}
+                        {sessionActionError ? (
+                          <div className="mt-3 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                            {sessionActionError}
+                          </div>
+                        ) : null}
+                        <Button
+                          className="mt-3 w-full"
+                          onClick={() => {
+                            void handleStartSession()
+                          }}
+                          disabled={isStartingSession || !!activeSession}
+                        >
+                          <Play className="mr-2 size-4" />
+                          {isStartingSession ? "Starting..." : "Start Session"}
+                        </Button>
+                      </article>
+
+                      <article className="rounded-xl border border-border bg-muted/25 p-4">
+                        <p className="flex items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                          <Activity className="size-3.5" />
+                          Recent Sessions
+                        </p>
+                        <div className="mt-3 max-h-[250px] space-y-2 overflow-auto pr-1">
+                          {recentSessions.length === 0 ? (
+                            <div className="rounded-lg border border-border bg-background/70 px-3 py-2 text-sm text-muted-foreground">
+                              No sessions yet for this project.
+                            </div>
+                          ) : (
+                            recentSessions.map((session) => (
+                              <div
+                                key={session.id}
+                                className="grid gap-1 rounded-lg border border-border bg-background/75 px-3 py-2"
+                              >
+                                <p className="truncate text-sm font-medium">
+                                  {session.title || "Untitled session"}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {formatStartedAt(session.startedAt)}
+                                </p>
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="text-muted-foreground">{session.duration}</span>
+                                  <span className="font-medium">
+                                    {session.isActive ? "Active" : "Completed"}
+                                  </span>
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </article>
+                    </div>
+                  </div>
                 )}
               </div>
             </section>

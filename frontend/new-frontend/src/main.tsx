@@ -4,12 +4,15 @@ import { ThemeProvider } from 'next-themes'
 import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App.tsx'
+import { AuthSessionProvider } from './auth/auth-session.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       <BrowserRouter>
-        <App />
+        <AuthSessionProvider>
+          <App />
+        </AuthSessionProvider>
       </BrowserRouter>
     </ThemeProvider>
   </StrictMode>,

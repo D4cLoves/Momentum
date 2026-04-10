@@ -1,3 +1,5 @@
+import { apiRequest } from './httpClient'
+
 export type RegisterRequest = {
   name: string
   email: string
@@ -13,53 +15,24 @@ export type LoginResponse = {
   accessToken: string
 }
 
-async function readError(response: Response): Promise<string> {
-  try {
-    const data = (await response.json()) as {
-      message?: string
-      title?: string
-      detail?: string
-    }
-
-    return (
-      data.message ||
-      data.title ||
-      data.detail ||
-      `Request failed with status ${response.status}`
-    )
-  } catch {
-    return `Request failed with status ${response.status}`
-  }
-}
-
 export async function registerUser(payload: RegisterRequest): Promise<void> {
-  const response = await fetch('/api/users/register', {
+  return apiRequest<void>('/api/users/register', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    credentials: 'include',
     body: JSON.stringify(payload),
   })
-
-  if (!response.ok) {
-    throw new Error(await readError(response))
-  }
 }
 
 export async function loginUser(payload: LoginRequest): Promise<LoginResponse> {
-  const response = await fetch('/api/users/login', {
+  return apiRequest<LoginResponse>('/api/users/login', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    credentials: 'include',
     body: JSON.stringify(payload),
   })
+}
 
-  if (!response.ok) {
-    throw new Error(await readError(response))
-  }
-
-  return (await response.json()) as LoginResponse
+export async function refreshSession(): Promise<void> {
+  return apiRequest<void>('/api/users/refresh', {
+    method: 'POST',
+    body: JSON.stringify({ refreshTokens: '' }),
+    skipAuthRefresh: true,
+  })
 }

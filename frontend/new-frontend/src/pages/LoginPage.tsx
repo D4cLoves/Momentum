@@ -2,10 +2,11 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { loginUser } from '../api/authApi'
-import { saveAccessToken } from '../auth/tokenStorage'
+import { useAuthSession } from '@/auth/auth-session'
 
 export function LoginPage() {
   const navigate = useNavigate()
+  const { markAuthenticated } = useAuthSession()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -17,8 +18,8 @@ export function LoginPage() {
     setError('')
 
     try {
-      const result = await loginUser({ email, password })
-      saveAccessToken(result.accessToken)
+      await loginUser({ email, password })
+      markAuthenticated()
       navigate('/cabinet')
     } catch (submitError) {
       const message =

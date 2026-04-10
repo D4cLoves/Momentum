@@ -7,6 +7,7 @@ import { GravityStarsBackground } from '@/components/animate-ui/components/backg
 import { ThemeTogglerButton } from '@/components/animate-ui/components/buttons/theme-toggler'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { CabinetPage } from './pages/CabinetPage'
+import { CabinetCustomPage } from './pages/CabinetCustomPage'
 import { LandingPage } from './pages/LandingPage'
 import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
@@ -28,6 +29,14 @@ function App() {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/cabinet-custom"
+        element={
+          <ProtectedRoute>
+            <CabinetCustomPage />
+          </ProtectedRoute>
+        }
+      />
     </Routes>
   )
 
@@ -41,22 +50,24 @@ function App() {
 
       <div className={isCabinetRoute ? 'cabinet-shell' : 'app-shell'}>
         <div className="content-layer">
-          <header className="header">
-            <p className="brand">Momentum Frontend</p>
-            <nav className="top-nav">
-              <NavLink to="/">Main</NavLink>
-              <NavLink to="/login">Login</NavLink>
-              <NavLink to="/register">Register</NavLink>
-              <NavLink to="/cabinet">Cabinet</NavLink>
-            </nav>
-            <ThemeTogglerButton
-              variant="outline"
-              size="sm"
-              direction="ltr"
-              modes={['light', 'dark']}
-              aria-label="Toggle theme"
-            />
-          </header>
+          {!isCabinetRoute && (
+            <header className="header">
+              <p className="brand">Momentum Frontend</p>
+              <nav className="top-nav">
+                <NavLink to="/">Main</NavLink>
+                <NavLink to="/login">Login</NavLink>
+                <NavLink to="/register">Register</NavLink>
+                <NavLink to="/cabinet">Cabinet</NavLink>
+              </nav>
+              <ThemeTogglerButton
+                variant="outline"
+                size="sm"
+                direction="ltr"
+                modes={['light', 'dark']}
+                aria-label="Toggle theme"
+              />
+            </header>
+          )}
 
           <main className={isCabinetRoute ? 'cabinet-page' : 'page'}>
             {appRoutes}

@@ -1,21 +1,50 @@
-# React + TypeScript + Vite + shadcn/ui
+# Momentum Frontend
 
-This is a template for a new Vite project with React, TypeScript, and shadcn/ui.
+Dark, focused React frontend for the Momentum backend.
 
-## Adding components
-
-To add components to your app, run the following command:
+## Run
 
 ```bash
-npx shadcn@latest add button
+npm install
+npm run dev
 ```
 
-This will place the ui components in the `src/components` directory.
+Backend default expected URL: `http://localhost:5271`.
 
-## Using components
+## Environment
 
-To use the components in your app, import them as follows:
+Copy `.env.example` and adjust if needed:
 
-```tsx
-import { Button } from "@/components/ui/button"
+```env
+VITE_API_URL=/api
+VITE_API_PROXY_TARGET=http://localhost:5271
 ```
+
+`/api` is proxied by Vite in development, so auth cookies and API calls stay clean.
+
+## Routes
+
+- `/` - landing page
+- `/login` - sign in
+- `/register` - sign up
+- `/cabinet` - dashboard overview
+- `/cabinet/stats` - statistics page
+- `/cabinet/roadmap` - prepared placeholder for future features
+
+## Structure
+
+- `src/app` - router and route guards
+- `src/features/auth` - auth API, context, pages
+- `src/features/cabinet` - cabinet layout, data context, pages
+- `src/features/landing` - landing page
+- `src/shared/api` - HTTP client and API errors
+- `src/shared/config` - env config
+- `src/shared/lib` - reusable utility helpers
+
+## Notes
+
+- Account modal is intentionally UI-only for now, ready for your backend wiring.
+- Cabinet data uses backend endpoints:
+  - `GET /api/areas`
+  - `GET /api/projects`
+  - `GET /api/sessions`

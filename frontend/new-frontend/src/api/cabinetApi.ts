@@ -45,6 +45,27 @@ export type StartSessionPayload = {
   goal: string
 }
 
+export type StartSessionResponse = {
+  id: string
+  projectId: string
+  title: string | null
+  goal: string | null
+  startedAt: string
+  isActive: boolean
+}
+
+export type EndSessionPayload = {
+  notes: string | null
+}
+
+export type CreateSessionTaskPayload = {
+  description: string
+}
+
+export type UpdateSessionTaskStatusPayload = {
+  isCompleted: boolean
+}
+
 export type CreateProjectPayload = {
   areaId: string
   name: string
@@ -117,9 +138,47 @@ export function getSessions(): Promise<SessionDto[]> {
   return apiRequest<SessionDto[]>("/api/sessions")
 }
 
-export function startSession(payload: StartSessionPayload): Promise<SessionDto> {
-  return apiRequest<SessionDto>("/api/sessions", {
+export function startSession(payload: StartSessionPayload): Promise<StartSessionResponse> {
+  return apiRequest<StartSessionResponse>("/api/sessions", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+      ProjectId: payload.projectId,
+      Title: payload.title,
+      Goal: payload.goal,
+    }),
+  })
+}
+
+export function endSession(sessionId: string, payload: EndSessionPayload): Promise<SessionDto> {
+  return apiRequest<SessionDto>(`/api/sessions/${sessionId}/end`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      Notes: payload.notes,
+    }),
+  })
+}
+
+export function createSessionTask(
+  sessionId: string,
+  payload: CreateSessionTaskPayload
+): Promise<SessionTaskDto> {
+  return apiRequest<SessionTaskDto>(`/api/sessions/${sessionId}/tasks`, {
+    method: "POST",
+    body: JSON.stringify({
+      Description: payload.description,
+    }),
+  })
+}
+
+export function updateSessionTaskStatus(
+  sessionId: string,
+  taskId: string,
+  payload: UpdateSessionTaskStatusPayload
+): Promise<SessionTaskDto> {
+  return apiRequest<SessionTaskDto>(`/api/sessions/${sessionId}/tasks/${taskId}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      IsCompleted: payload.isCompleted,
+    }),
   })
 }

@@ -17,6 +17,7 @@ public class SessionRepository : ISessionRepository
 	public async Task<ProjectSession?> GetByIdAsync(Guid id)
 	{
 		return await _context.ProjectSessions
+			.AsTracking()
 			.Include(s => s.Tasks)
 			.FirstOrDefaultAsync(s => s.Id == id);
 	}
@@ -24,6 +25,7 @@ public class SessionRepository : ISessionRepository
 	public async Task<List<ProjectSession>> GetByUserIdAsync(string userId)
 	{
 		return await _context.ProjectSessions
+			.AsTracking()
 			.Include(s => s.Tasks)
 			.Where(s => _context.Projects.Any(p => p.Id == s.ProjectId && p.UserId == userId))
 			.OrderByDescending(s => s.StartedAt)
@@ -36,9 +38,15 @@ public class SessionRepository : ISessionRepository
 		await Task.CompletedTask;
 	}
 
+	public async Task AddTaskAsync(SessionTask task)
+	{
+		_context.SessionTasks.Add(task);
+		await Task.CompletedTask;
+	}
+
 	public async Task UpdateSessionASync(ProjectSession session)
 	{
-		_context.ProjectSessions.Attach(session);
+		_ = session;
 		await Task.CompletedTask;
 	}
 
@@ -48,5 +56,3 @@ public class SessionRepository : ISessionRepository
 		await Task.CompletedTask;
 	}
 }
-
-

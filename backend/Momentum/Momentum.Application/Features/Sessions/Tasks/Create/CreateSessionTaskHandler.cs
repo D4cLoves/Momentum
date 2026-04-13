@@ -34,7 +34,7 @@ public sealed class CreateSessionTaskHandler
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userId);
         if (sessionId == Guid.Empty) return Errors.ParamNull(nameof(sessionId));
-        ArgumentNullException.ThrowIfNull(request);
+        if (request is null) return Errors.ParamNull(nameof(request));
 
         ct.ThrowIfCancellationRequested();
 
@@ -50,10 +50,7 @@ public sealed class CreateSessionTaskHandler
         var taskResult = SessionTask.Create(sessionId, request.Description);
         if (!taskResult.IsSuccess) return taskResult.Error;
 
-        var addResult = session.AddTask(taskResult.Value);
-        if (!addResult.IsSuccess) return addResult.Error;
-
-        await _sessionRepository.UpdateSessionASync(session);
+        await _sessionRepository.AddTaskAsync(taskResult.Value);
         await _unitOfWork.SaveChangesAsync(ct);
 
         return taskResult.Value.ToResponse();

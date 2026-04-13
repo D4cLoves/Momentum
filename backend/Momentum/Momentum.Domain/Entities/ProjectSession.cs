@@ -75,7 +75,6 @@ namespace Momentum.Domain.Entities
       if (_tasks.Contains(task)) return Errors.TaskAlreadyExists;
 
       _tasks.Add(task);
-      UpdateTimestamp();
       return Result.Success();
     }
 
@@ -85,10 +84,8 @@ namespace Momentum.Domain.Entities
       if (!IsActive) return Errors.SessionNotActive;
 
       _tasks.Remove(task);
-      UpdateTimestamp();
       return Result.Success();
     }
   }
 }
-
 

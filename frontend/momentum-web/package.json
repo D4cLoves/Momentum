@@ -1,5 +1,5 @@
 {
-  "name": "new-frontend",
+  "name": "momentum-web",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -42,3 +42,4 @@
     "vite": "^8.0.4"
   }
 }
+

@@ -456,7 +456,7 @@ export const RadixFilesDemo = ({ onProjectFocus, onTreeMutated }: RadixFilesDemo
     <>
       <section className="supports-backdrop-blur:bg-white/10 supports-backdrop-blur:dark:bg-black/10 flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border shadow-sm backdrop-blur-md">
         <div className="border-b border-border px-4 py-3">
-          <p className="text-sm font-semibold">Files</p>
+          <p className="text-center text-sm font-semibold">Files</p>
         </div>
 
         <div className="min-h-0 flex-1 overflow-auto bg-muted/25 p-3">

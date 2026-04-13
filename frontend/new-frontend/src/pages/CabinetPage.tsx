@@ -6,12 +6,21 @@ import {
   Settings2,
   Sparkles,
   Play,
-  Gauge,
+  Square,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { buttonVariants, Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/animate-ui/components/radix/dialog"
 import {
   Tooltip,
   TooltipContent,
@@ -20,12 +29,19 @@ import {
 } from "@/components/ui/tooltip"
 import { Dock, DockIcon } from "@/components/ui/dock"
 import { ThemeTogglerButton } from "@/components/animate-ui/components/buttons/theme-toggler"
+import {
+  PlayfulTodolist,
+  type PlayfulTodoItem,
+} from "@/components/animate-ui/components/community/playful-todolist"
 import { RadixFilesDemo } from "@/components/RadixFilesDemo"
 import {
+  createSessionTask,
+  endSession,
   getAreas,
   getProjects,
   getSessions,
   startSession,
+  updateSessionTaskStatus,
   type AreaDto,
   type ProjectDto,
   type SessionDto,
@@ -154,6 +170,23 @@ function formatStartedAt(value: string) {
   return date.toLocaleString()
 }
 
+function formatElapsed(seconds: number) {
+  const safe = Math.max(0, seconds)
+  const hours = Math.floor(safe / 3600)
+  const minutes = Math.floor((safe % 3600) / 60)
+  const secs = safe % 60
+
+  if (hours > 0) {
+    return `${hours.toString().padStart(2, "0")}:${minutes
+      .toString()
+      .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
+  }
+
+  return `${minutes.toString().padStart(2, "0")}:${secs
+    .toString()
+    .padStart(2, "0")}`
+}
+
 export function CabinetPage() {
   const [areas, setAreas] = useState<AreaDto[]>([])
   const [projects, setProjects] = useState<ProjectDto[]>([])
@@ -164,9 +197,18 @@ export function CabinetPage() {
   const [focusedAreaId, setFocusedAreaId] = useState<string | null>(null)
   const [isStartingSession, setIsStartingSession] = useState(false)
   const [sessionActionError, setSessionActionError] = useState<string | null>(null)
+  const [isStartDialogOpen, setIsStartDialogOpen] = useState(false)
+  const [startSessionTitle, setStartSessionTitle] = useState("")
+  const [startSessionGoal, setStartSessionGoal] = useState("")
+  const [sessionTaskDraft, setSessionTaskDraft] = useState("")
+  const [isSubmittingTask, setIsSubmittingTask] = useState(false)
+  const [isEndingSession, setIsEndingSession] = useState(false)
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
 
-  const loadWorkspace = useCallback(async () => {
-    setIsWorkspaceLoading(true)
+  const loadWorkspace = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
+    if (!silent) {
+      setIsWorkspaceLoading(true)
+    }
     setWorkspaceError(null)
     try {
       const [nextAreas, nextProjects, nextSessions] = await Promise.all([
@@ -182,7 +224,9 @@ export function CabinetPage() {
         error instanceof Error ? error.message : "Unable to load project workspace"
       setWorkspaceError(message)
     } finally {
-      setIsWorkspaceLoading(false)
+      if (!silent) {
+        setIsWorkspaceLoading(false)
+      }
     }
   }, [])
 
@@ -192,8 +236,7 @@ export function CabinetPage() {
 
   const handleProjectFocus = useCallback((payload: FocusedProject | null) => {
     if (!payload) {
-      setFocusedProjectId(null)
-      setFocusedAreaId(null)
+      // Ignore transient null focus events from tree rerenders to keep workspace context stable.
       return
     }
 
@@ -202,11 +245,20 @@ export function CabinetPage() {
   }, [])
 
   const focusedProject = useMemo(() => {
-    if (!focusedProjectId) {
+    const activeProjectId =
+      sessions
+        .filter((session) => session.isActive)
+        .sort(
+          (left, right) =>
+            new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime()
+        )[0]?.projectId ?? null
+
+    const effectiveProjectId = focusedProjectId ?? activeProjectId
+    if (!effectiveProjectId) {
       return null
     }
-    return projects.find((project) => project.id === focusedProjectId) || null
-  }, [focusedProjectId, projects])
+    return projects.find((project) => project.id === effectiveProjectId) || null
+  }, [focusedProjectId, projects, sessions])
 
   const focusedArea = useMemo(() => {
     if (focusedAreaId) {
@@ -233,9 +285,20 @@ export function CabinetPage() {
       )
   }, [focusedProject, sessions])
 
-  const activeSession = useMemo(
+  const activeProjectSession = useMemo(
     () => projectSessions.find((session) => session.isActive) || null,
     [projectSessions]
+  )
+
+  const activeSession = useMemo(
+    () =>
+      sessions
+        .filter((session) => session.isActive)
+        .sort(
+          (left, right) =>
+            new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime()
+        )[0] ?? null,
+    [sessions]
   )
 
   const recentSessions = useMemo(() => projectSessions.slice(0, 4), [projectSessions])
@@ -257,37 +320,105 @@ export function CabinetPage() {
     return uniqueDays.size
   }, [projectSessions])
 
-  const momentumScore = useMemo(() => {
-    const raw = sessionsLast7 * 12 + activeDaysLast14 * 4
-    return Math.max(8, Math.min(98, raw))
-  }, [activeDaysLast14, sessionsLast7])
+  const goalHours = useMemo(
+    () => Math.max(1, focusedProject?.targetHours ?? 24),
+    [focusedProject?.targetHours]
+  )
 
-  const momentumLabel = useMemo(() => {
-    if (momentumScore >= 75) {
-      return "Strong pace"
+  const demoElapsedHours = useMemo(() => {
+    const modeled = sessionsLast7 * 1.6 + activeDaysLast14 * 0.7
+    return Math.min(goalHours, Number(modeled.toFixed(1)))
+  }, [activeDaysLast14, goalHours, sessionsLast7])
+
+  const goalProgressPercent = useMemo(
+    () => Math.min(100, Math.round((demoElapsedHours / goalHours) * 100)),
+    [demoElapsedHours, goalHours]
+  )
+
+  const activeSessionTodoItems = useMemo<PlayfulTodoItem[]>(
+    () =>
+      (activeSession?.tasks ?? []).map((task) => ({
+        id: task.id,
+        label: task.description,
+        isCompleted: task.isCompleted,
+      })) ?? [],
+    [activeSession]
+  )
+
+  useEffect(() => {
+    if (!activeSession) {
+      setElapsedSeconds(0)
+      return
     }
-    if (momentumScore >= 45) {
-      return "Stable pace"
+
+    const update = () => {
+      const started = new Date(activeSession.startedAt).getTime()
+      if (Number.isNaN(started)) {
+        setElapsedSeconds(0)
+        return
+      }
+
+      setElapsedSeconds(Math.floor((Date.now() - started) / 1000))
     }
-    return "Needs push"
-  }, [momentumScore])
+
+    update()
+    const timer = window.setInterval(update, 1000)
+    return () => window.clearInterval(timer)
+  }, [activeSession])
+
+  const openStartSessionDialog = useCallback(() => {
+    if (!focusedProject) {
+      return
+    }
+
+    setStartSessionTitle(
+      focusedProject.primaryTask
+        ? `Focus: ${focusedProject.primaryTask}`
+        : `Focus: ${focusedProject.name}`
+    )
+    setStartSessionGoal(focusedProject.goal || `Advance ${focusedProject.name}`)
+    setSessionActionError(null)
+    setIsStartDialogOpen(true)
+  }, [focusedProject])
 
   const handleStartSession = useCallback(async () => {
     if (!focusedProject) {
       return
     }
 
+    const title = startSessionTitle.trim()
+    if (!title) {
+      setSessionActionError("Session title is required.")
+      return
+    }
+
     setSessionActionError(null)
     setIsStartingSession(true)
     try {
-      await startSession({
+      const created = await startSession({
         projectId: focusedProject.id,
-        title: focusedProject.primaryTask
-          ? `Focus: ${focusedProject.primaryTask}`
-          : `Focus: ${focusedProject.name}`,
-        goal: focusedProject.goal || `Advance ${focusedProject.name}`,
+        title,
+        goal: startSessionGoal.trim() || `Advance ${focusedProject.name}`,
       })
-      await loadWorkspace()
+      const normalizedCreatedSession: SessionDto = {
+        id: created.id,
+        projectId: created.projectId,
+        title: created.title,
+        goal: created.goal,
+        startedAt: created.startedAt,
+        endedAt: null,
+        duration: "00:00",
+        notes: null,
+        isActive: created.isActive,
+        tasks: [],
+      }
+      setSessions((previous) => [
+        normalizedCreatedSession,
+        ...previous.filter((session) => session.id !== created.id),
+      ])
+      setFocusedProjectId(created.projectId)
+      setIsStartDialogOpen(false)
+      setSessionTaskDraft("")
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to start a new session"
@@ -295,23 +426,116 @@ export function CabinetPage() {
     } finally {
       setIsStartingSession(false)
     }
-  }, [focusedProject, loadWorkspace])
+  }, [focusedProject, startSessionGoal, startSessionTitle])
+
+  const handleCreateSessionTask = useCallback(async () => {
+    if (!activeSession) {
+      return
+    }
+
+    const description = sessionTaskDraft.trim()
+    if (!description) {
+      return
+    }
+
+    setIsSubmittingTask(true)
+    setSessionActionError(null)
+    try {
+      const createdTask = await createSessionTask(activeSession.id, { description })
+      setSessions((previous) =>
+        previous.map((session) =>
+          session.id === activeSession.id
+            ? { ...session, tasks: [...(session.tasks ?? []), createdTask] }
+            : session
+        )
+      )
+      setSessionTaskDraft("")
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to add session task"
+      setSessionActionError(message)
+    } finally {
+      setIsSubmittingTask(false)
+    }
+  }, [activeSession, sessionTaskDraft])
+
+  const handleToggleTask = useCallback(
+    async (taskId: string, nextChecked: boolean) => {
+      if (!activeSession) {
+        return
+      }
+
+      setSessionActionError(null)
+      try {
+        const updatedTask = await updateSessionTaskStatus(activeSession.id, taskId, {
+          isCompleted: nextChecked,
+        })
+
+        setSessions((previous) =>
+          previous.map((session) =>
+            session.id === activeSession.id
+              ? {
+                  ...session,
+                  tasks: (session.tasks ?? []).map((task) =>
+                    task.id === taskId ? updatedTask : task
+                  ),
+                }
+              : session
+          )
+        )
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to update task status"
+        setSessionActionError(message)
+      }
+    },
+    [activeSession]
+  )
+
+  const handleEndSession = useCallback(async () => {
+    if (!activeSession) {
+      return
+    }
+
+    setSessionActionError(null)
+    setIsEndingSession(true)
+    try {
+      const ended = await endSession(activeSession.id, { notes: null })
+      setSessions((previous) =>
+        previous.map((session) => (session.id === activeSession.id ? ended : session))
+      )
+      setSessionTaskDraft("")
+      void loadWorkspace({ silent: true })
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to end session"
+      setSessionActionError(message)
+    } finally {
+      setIsEndingSession(false)
+    }
+  }, [activeSession, loadWorkspace])
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
-      <div className="pointer-events-none fixed inset-x-0 bottom-[18px] z-50 flex justify-center px-4">
-        <div className="pointer-events-auto">
-          <DockDemo />
+      <div
+        className={cn(
+          "flex h-full min-h-0 flex-col transition-all duration-300",
+          activeSession && "pointer-events-none blur-[12px]"
+        )}
+      >
+        <div className="pointer-events-none fixed inset-x-0 bottom-[18px] z-50 flex justify-center px-4">
+          <div className="pointer-events-auto">
+            <DockDemo />
+          </div>
         </div>
-      </div>
 
-      <div className="flex flex-1 overflow-hidden pl-4 pr-2 pb-[40px] pt-4">
-        <div className="h-full w-full">
-          <div className="flex h-full min-h-0 gap-4">
-            <div className="flex h-full w-[min(340px,26vw)] min-w-[240px] flex-none flex-col gap-4">
+        <div className="flex flex-1 overflow-hidden pl-4 pr-2 pb-[40px] pt-4">
+          <div className="h-full w-full">
+            <div className="flex h-full min-h-0 gap-4">
+              <div className="flex h-full w-[min(340px,26vw)] min-w-[240px] flex-none flex-col gap-4">
               <section className="supports-backdrop-blur:bg-white/10 supports-backdrop-blur:dark:bg-black/10 flex h-[390px] flex-none flex-col rounded-2xl border shadow-sm backdrop-blur-md">
                 <div className="border-b border-border px-4 py-3">
-                  <p className="text-sm font-semibold">Focus Summary</p>
+                  <p className="text-center text-sm font-semibold">Focus Summary</p>
                 </div>
 
                 <div className="grid h-full grid-rows-[auto_1fr_auto] gap-4 p-4">
@@ -350,7 +574,7 @@ export function CabinetPage() {
             </div>
 
             <section className="supports-backdrop-blur:bg-white/10 supports-backdrop-blur:dark:bg-black/10 flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border shadow-sm backdrop-blur-md">
-              <div className="border-b border-border px-4 py-3">
+              <div className="flex justify-center border-b border-border px-4 py-3">
                 <p className="text-sm font-semibold">Project Workspace</p>
               </div>
 
@@ -380,8 +604,7 @@ export function CabinetPage() {
                 )}
 
                 {!workspaceError && !isWorkspaceLoading && focusedProject && (
-                  <div className="grid h-full min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
-                    <div className="grid h-full min-h-0 gap-4 grid-rows-[auto_minmax(0,1fr)]">
+                  <div className="grid h-full min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,0.65fr)] xl:grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)]">
                       <article className="rounded-xl border border-border bg-muted/25 p-4">
                         <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Focused Project</p>
                         <h3 className="mt-1 text-xl font-semibold">{focusedProject.name}</h3>
@@ -414,13 +637,35 @@ export function CabinetPage() {
                           <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
                             <p className="text-[11px] text-muted-foreground">State</p>
                             <p className="mt-1 text-sm font-medium">
-                              {activeSession ? "Active session" : "Ready to launch"}
+                              {activeProjectSession
+                                ? "Active session"
+                                : "Ready to launch"}
                             </p>
                           </div>
                         </div>
                       </article>
 
-                      <article className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-muted/25 p-5">
+                      <article className="rounded-xl border border-border bg-muted/25 p-4">
+                        <p className="text-center text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Goal Time Slider</p>
+                        <div className="mt-4 rounded-lg border border-border bg-background/70 px-4 py-4">
+                          <div className="h-3 w-full overflow-hidden rounded-full bg-muted/70">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-primary/70 via-primary to-primary shadow-[0_0_18px_hsl(var(--primary)/0.55)] transition-all duration-700"
+                              style={{ width: `${goalProgressPercent}%` }}
+                            />
+                          </div>
+                          <div className="mt-4 flex items-end justify-between">
+                            <p className="text-3xl font-semibold leading-none [font-variant-numeric:tabular-nums]">
+                              {goalProgressPercent}%
+                            </p>
+                            <p className="text-sm font-medium [font-variant-numeric:tabular-nums]">
+                              {demoElapsedHours}h / {goalHours}h
+                            </p>
+                          </div>
+                        </div>
+                      </article>
+
+                      <article className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-muted/25 p-5 xl:row-span-2">
                         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_18%,hsl(var(--primary)/0.18),transparent_42%),radial-gradient(circle_at_88%_82%,hsl(var(--primary)/0.12),transparent_44%)]" />
                         <div className="relative z-10 flex h-full flex-col">
                           <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
@@ -449,7 +694,7 @@ export function CabinetPage() {
                             <Button
                               className="h-24 w-full max-w-2xl rounded-full border border-primary/30 bg-primary text-primary-foreground text-xl font-semibold shadow-[0_14px_34px_hsl(var(--primary)/0.45)] transition-all hover:scale-[1.01] hover:shadow-[0_18px_40px_hsl(var(--primary)/0.55)]"
                               onClick={() => {
-                                void handleStartSession()
+                                openStartSessionDialog()
                               }}
                               disabled={isStartingSession || !!activeSession}
                             >
@@ -471,36 +716,9 @@ export function CabinetPage() {
                           </div>
                         </div>
                       </article>
-                    </div>
-
-                    <aside className="grid min-h-0 gap-4 xl:grid-rows-[auto_auto_minmax(0,1fr)]">
-                      <article className="rounded-xl border border-border bg-muted/25 p-4">
-                        <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Focus Health</p>
-                        <div className="mt-3 flex items-center gap-3 rounded-lg border border-border bg-background/70 px-3 py-3">
-                          <div
-                            className="relative flex size-16 items-center justify-center rounded-full"
-                            style={{
-                              background: `conic-gradient(hsl(var(--primary)) ${momentumScore}%, hsl(var(--muted)) ${momentumScore}% 100%)`,
-                            }}
-                          >
-                            <div className="flex size-12 items-center justify-center rounded-full bg-background text-xs font-semibold">
-                              {momentumScore}
-                            </div>
-                          </div>
-                          <div className="min-w-0">
-                            <p className="flex items-center gap-2 text-sm font-medium">
-                              <Gauge className="size-4" />
-                              {momentumLabel}
-                            </p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              Design-only score from session frequency and consistency.
-                            </p>
-                          </div>
-                        </div>
-                      </article>
 
                       <article className="rounded-xl border border-border bg-muted/25 p-4">
-                        <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Project Snapshot</p>
+                        <p className="text-center text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Project Snapshot</p>
                         <div className="mt-3 space-y-2">
                           <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
                             <p className="text-[11px] text-muted-foreground">Last Start</p>
@@ -520,7 +738,7 @@ export function CabinetPage() {
                       </article>
 
                       <article className="flex min-h-0 flex-col rounded-xl border border-border bg-muted/25 p-4">
-                        <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Activity Feed</p>
+                        <p className="text-center text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Activity Feed</p>
                         <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-auto pr-1">
                           {recentSessions.length === 0 ? (
                             <div className="rounded-lg border border-border bg-background/70 px-3 py-2 text-sm text-muted-foreground">
@@ -543,7 +761,6 @@ export function CabinetPage() {
                           )}
                         </div>
                       </article>
-                    </aside>
                   </div>
                 )}
               </div>
@@ -551,6 +768,139 @@ export function CabinetPage() {
           </div>
         </div>
       </div>
+      </div>
+
+      <Dialog
+        open={isStartDialogOpen}
+        onOpenChange={(nextOpen: boolean) => {
+          setIsStartDialogOpen(nextOpen)
+          if (!nextOpen) {
+            setSessionActionError(null)
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Start Session</DialogTitle>
+            <DialogDescription>
+              Enter session title before launch.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <div className="grid gap-1.5">
+              <label className="text-xs text-muted-foreground">Title</label>
+              <Input
+                value={startSessionTitle}
+                onChange={(event) => setStartSessionTitle(event.target.value)}
+                placeholder="Focus: Feature implementation"
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <label className="text-xs text-muted-foreground">Goal</label>
+              <Input
+                value={startSessionGoal}
+                onChange={(event) => setStartSessionGoal(event.target.value)}
+                placeholder="What should be done in this session?"
+              />
+            </div>
+            {sessionActionError ? (
+              <p className="text-xs text-destructive">{sessionActionError}</p>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsStartDialogOpen(false)}
+              disabled={isStartingSession}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                void handleStartSession()
+              }}
+              disabled={isStartingSession}
+            >
+              {isStartingSession ? "Starting..." : "Start"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {activeSession ? (
+        <div className="absolute inset-0 z-[70] flex items-center justify-center bg-background/35 p-6">
+          <div className="flex h-[min(84vh,860px)] w-full max-w-7xl flex-col p-2">
+            <section className="flex flex-col items-center">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                Live Session
+              </p>
+              <h3 className="mt-2 text-center text-3xl font-semibold">
+                {activeSession.title || "Untitled session"}
+              </h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Started at {formatStartedAt(activeSession.startedAt)}
+              </p>
+            </section>
+
+            <div className="relative mt-4 min-h-0 flex-1">
+              <section className="flex min-h-[280px] flex-col items-center justify-center md:absolute md:left-1/2 md:top-1/2 md:min-h-0 md:-translate-x-1/2 md:-translate-y-1/2">
+                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                  Elapsed
+                </p>
+                <p className="mt-3 text-[clamp(72px,10vw,150px)] font-semibold leading-none [font-variant-numeric:tabular-nums]">
+                  {formatElapsed(elapsedSeconds)}
+                </p>
+              </section>
+
+              <section className="w-full md:absolute md:top-0 md:w-[min(340px,28vw)] lg:-right-10 xl:-right-16">
+                <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+                  Session Tasks
+                </p>
+                <div className="mt-3">
+                  <Input
+                    className="rounded-xl"
+                    value={sessionTaskDraft}
+                    onChange={(event) => setSessionTaskDraft(event.target.value)}
+                    placeholder="Add task for current session..."
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault()
+                        void handleCreateSessionTask()
+                      }
+                    }}
+                  />
+                </div>
+
+                <div className="mt-3 max-h-[44vh] overflow-auto md:max-h-[48vh]">
+                  <PlayfulTodolist
+                    items={activeSessionTodoItems}
+                    onToggle={(id, nextChecked) => {
+                      void handleToggleTask(id, nextChecked)
+                    }}
+                    emptyMessage="Session started with an empty list. Add your first task."
+                    showDividers={false}
+                    className="h-full !rounded-none !bg-transparent !p-0 dark:!bg-transparent"
+                  />
+                </div>
+              </section>
+            </div>
+
+            <section className="flex justify-center">
+              <Button
+                variant="destructive"
+                className="min-w-[240px] rounded-2xl"
+                onClick={() => {
+                  void handleEndSession()
+                }}
+                disabled={isEndingSession}
+              >
+                <Square className="mr-2 size-4" />
+                {isEndingSession ? "Ending session..." : "Finish Session"}
+              </Button>
+            </section>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

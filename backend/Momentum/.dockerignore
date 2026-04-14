@@ -1,0 +1,14 @@
+.git
+.gitignore
+.idea
+.vs
+node_modules
+**/bin
+**/obj
+**/TestResults
+Momentum.IntegrationTests
+docs
+*.user
+*.suo
+*.tmp
+*.log

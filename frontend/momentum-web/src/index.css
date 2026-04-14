@@ -26,15 +26,20 @@ a {
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  min-height: calc(100vh - 48px);
-  max-width: 920px;
-  margin: 0 auto;
-  padding: 24px;
+  min-height: 100vh;
+  width: 100%;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .content-layer {
   position: relative;
   z-index: 1;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .header {
@@ -43,7 +48,8 @@ a {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
+  padding: 0 4px;
 }
 
 .brand {
@@ -62,10 +68,41 @@ a {
 }
 
 .page {
-  border: 1px solid #d0d0d0;
-  padding: 20px;
-  background: color-mix(in oklab, var(--background) 80%, transparent);
-  backdrop-filter: blur(2px);
+  flex: 1;
+  min-height: 100vh;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.page > section {
+  width: 100%;
+  min-height: 100%;
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+}
+
+@media (max-width: 1024px) {
+  .app-shell {
+    padding: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .app-shell {
+    padding: 0;
+  }
+
+  .header {
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+
+  .page > section {
+    width: 100%;
+    min-height: 100%;
+  }
 }
 
 .cabinet-shell {

@@ -3,7 +3,7 @@ using Momentum.Application.Abstractions.Persistence;
 using Momentum.SharedKernel;
 using Momentum.Domain.Entities;
 using Momentum.Domain.Interfaces;
-
+ 
 namespace Momentum.Application.Features.Areas.Create;
 
 public sealed class CreateAreaHandler

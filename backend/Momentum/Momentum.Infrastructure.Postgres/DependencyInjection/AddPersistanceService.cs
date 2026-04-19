@@ -9,7 +9,7 @@ public static class AddPersistanceService
     public static IServiceCollection AddServices(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddPersistence(configuration);
-        services.AddAuthInfrastructureServices();
+        services.AddAuthInfrastructureServices(configuration);
         return services;
     }
 }

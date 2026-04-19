@@ -14,10 +14,16 @@ type ApiRequestOptions = RequestInit & {
 
 async function readError(response: Response): Promise<string> {
   try {
-    const data = (await response.json()) as {
+    const data = (await response.json()) as
+      | string
+      | {
       message?: string
       title?: string
       detail?: string
+    }
+
+    if (typeof data === 'string') {
+      return data
     }
 
     return (

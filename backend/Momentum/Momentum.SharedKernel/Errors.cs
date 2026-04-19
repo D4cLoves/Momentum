@@ -1,12 +1,5 @@
 ﻿namespace Momentum.SharedKernel;
 
-public enum ErrorType { NotFound, Validation, Unauthorized, Conflict }
-
-public record Error(string Id, ErrorType Type, string Description)
-{
-    public static readonly Error None = new(string.Empty, default, string.Empty);
-}
-
 public static class Errors
 {
     public static Error AccountNotFound { get; } = new("AccountNotFound", ErrorType.NotFound, "Account was not found.");

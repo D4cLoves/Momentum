@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react"
+import { useNavigate } from "react-router-dom"
 import {
   HomeIcon,
   BarChart3,
@@ -10,6 +11,7 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { useAuthSession } from "@/auth/auth-session"
 import { buttonVariants, Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
@@ -34,6 +36,7 @@ import {
   type PlayfulTodoItem,
 } from "@/components/animate-ui/components/community/playful-todolist"
 import { RadixFilesDemo } from "@/components/RadixFilesDemo"
+import { logoutUser } from "@/api/authApi"
 import {
   createSessionTask,
   endSession,
@@ -79,7 +82,7 @@ const DATA = {
   },
 }
 
-function DockDemo() {
+function DockDemo({ onAccountClick }: { onAccountClick: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center">
       <TooltipProvider>
@@ -94,16 +97,30 @@ function DockDemo() {
             <DockIcon key={item.label}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <a
-                    href={item.href}
-                    aria-label={item.label}
-                    className={cn(
-                      buttonVariants({ variant: "ghost", size: "icon" }),
-                      "size-[3rem] rounded-full"
-                    )}
-                  >
-                    <item.icon className="size-[18px]" />
-                  </a>
+                  {item.label === "Account" ? (
+                    <button
+                      type="button"
+                      onClick={onAccountClick}
+                      aria-label={item.label}
+                      className={cn(
+                        buttonVariants({ variant: "ghost", size: "icon" }),
+                        "size-[3rem] rounded-full"
+                      )}
+                    >
+                      <item.icon className="size-[18px]" />
+                    </button>
+                  ) : (
+                    <a
+                      href={item.href}
+                      aria-label={item.label}
+                      className={cn(
+                        buttonVariants({ variant: "ghost", size: "icon" }),
+                        "size-[3rem] rounded-full"
+                      )}
+                    >
+                      <item.icon className="size-[18px]" />
+                    </a>
+                  )}
                 </TooltipTrigger>
                 <TooltipContent>
                   <p>{item.label}</p>
@@ -188,6 +205,8 @@ function formatElapsed(seconds: number) {
 }
 
 export function CabinetPage() {
+  const navigate = useNavigate()
+  const { markGuest } = useAuthSession()
   const [areas, setAreas] = useState<AreaDto[]>([])
   const [projects, setProjects] = useState<ProjectDto[]>([])
   const [sessions, setSessions] = useState<SessionDto[]>([])
@@ -204,6 +223,9 @@ export function CabinetPage() {
   const [isSubmittingTask, setIsSubmittingTask] = useState(false)
   const [isEndingSession, setIsEndingSession] = useState(false)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
+  const [isAccountDialogOpen, setIsAccountDialogOpen] = useState(false)
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const [accountActionError, setAccountActionError] = useState<string | null>(null)
 
   const loadWorkspace = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
     if (!silent) {
@@ -515,6 +537,22 @@ export function CabinetPage() {
     }
   }, [activeSession, loadWorkspace])
 
+  const handleLogout = useCallback(async () => {
+    setIsLoggingOut(true)
+    setAccountActionError(null)
+    try {
+      await logoutUser()
+      markGuest()
+      setIsAccountDialogOpen(false)
+      navigate("/login")
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Logout failed"
+      setAccountActionError(message)
+    } finally {
+      setIsLoggingOut(false)
+    }
+  }, [markGuest, navigate])
+
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
       <div
@@ -525,7 +563,12 @@ export function CabinetPage() {
       >
         <div className="pointer-events-none fixed inset-x-0 bottom-[18px] z-50 flex justify-center px-4">
           <div className="pointer-events-auto">
-            <DockDemo />
+            <DockDemo
+              onAccountClick={() => {
+                setAccountActionError(null)
+                setIsAccountDialogOpen(true)
+              }}
+            />
           </div>
         </div>
 
@@ -769,6 +812,46 @@ export function CabinetPage() {
         </div>
       </div>
       </div>
+
+      <Dialog
+        open={isAccountDialogOpen}
+        onOpenChange={(nextOpen: boolean) => {
+          setIsAccountDialogOpen(nextOpen)
+          if (!nextOpen) {
+            setAccountActionError(null)
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Аккаунт</DialogTitle>
+            <DialogDescription>
+              Выйти из текущего аккаунта?
+            </DialogDescription>
+          </DialogHeader>
+          {accountActionError ? (
+            <p className="text-xs text-destructive">{accountActionError}</p>
+          ) : null}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsAccountDialogOpen(false)}
+              disabled={isLoggingOut}
+            >
+              Отмена
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                void handleLogout()
+              }}
+              disabled={isLoggingOut}
+            >
+              {isLoggingOut ? "Выходим..." : "Выйти"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={isStartDialogOpen}

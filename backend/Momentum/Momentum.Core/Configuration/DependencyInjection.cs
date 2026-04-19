@@ -17,13 +17,14 @@ public static class DependencyInjection
         services
             .AddApplicationHandlers()
             .AddPersistence(configuration)
-            .AddAuthInfrastructureServices();
+            .AddAuthInfrastructureServices(configuration);
 
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUser, CurrentUser>();
         services.AddScoped<ICurrentUserProvider, CurrentUser>();
 
         services.Configure<AuthSettings>(builder.Configuration.GetSection("AuthSettings"));
+        services.Configure<EmailSettings>(builder.Configuration.GetSection(EmailSettings.SectionName));
         services.AddJwtAuthentication(configuration);
 
         services

@@ -496,7 +496,7 @@ export const RadixFilesDemo = ({ onProjectFocus, onTreeMutated }: RadixFilesDemo
                     <button
                       type="button"
                       onClick={() => setIsRootOpen((previous) => !previous)}
-                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm font-semibold transition-colors hover:bg-accent/60"
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm font-semibold transition-colors hover:bg-[rgb(var(--cabinet-accent-rgb)/0.14)]"
                     >
                       <ChevronRight
                         className={cn(
@@ -509,7 +509,7 @@ export const RadixFilesDemo = ({ onProjectFocus, onTreeMutated }: RadixFilesDemo
                     </button>
                   </ContextRowMenu>
 
-                  <FolderContent>
+                  <FolderContent className="before:hidden">
                     <div className="ml-1 mt-0 border-l border-border pl-0.5">
                       {inlineAreaName !== null && (
                         <div className="mb-1 flex items-center gap-2 rounded-md px-2 py-1.5">
@@ -718,7 +718,7 @@ export const RadixFilesDemo = ({ onProjectFocus, onTreeMutated }: RadixFilesDemo
                                             className={cn(
                                               'rounded-md',
                                               selectedProjectId === project.id &&
-                                                'bg-accent/50 ring-1 ring-border',
+                                                'bg-[rgb(var(--cabinet-accent-rgb)/0.2)] ring-1 ring-[rgb(var(--cabinet-accent-rgb)/0.35)]',
                                             )}
                                           >
                                             <FileItem icon={FileIcon}>{project.name}</FileItem>

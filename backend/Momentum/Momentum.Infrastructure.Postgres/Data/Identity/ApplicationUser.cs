@@ -7,6 +7,7 @@ namespace Momentum.Infrastructure.Data.Identity
 {
   public class ApplicationUser : IdentityUser
   {
+    public string TimeZoneId { get; set; } = "UTC";
   }
 }
 

@@ -11,6 +11,15 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import {
+  ACCENT_OPTIONS,
+  DEFAULT_UI_SETTINGS,
+  FONT_OPTIONS,
+  applyUiSettings,
+  loadUiSettings,
+  saveUiSettings,
+  type UiSettings,
+} from "@/lib/ui-settings"
 import { useAuthSession } from "@/auth/auth-session"
 import { buttonVariants, Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -36,18 +45,25 @@ import {
   type PlayfulTodoItem,
 } from "@/components/animate-ui/components/community/playful-todolist"
 import { RadixFilesDemo } from "@/components/RadixFilesDemo"
-import { logoutUser } from "@/api/authApi"
+import {
+  getCurrentUserProfile,
+  type CurrentUserProfileResponse,
+  logoutUser,
+  updateUserTimeZone,
+} from "@/api/authApi"
 import {
   createSessionTask,
   endSession,
   getAreas,
   getProjects,
   getSessions,
+  getStreak,
   startSession,
   updateSessionTaskStatus,
   type AreaDto,
   type ProjectDto,
   type SessionDto,
+  type StreakDto,
 } from "@/api/cabinetApi"
 
 type IconProps = React.HTMLAttributes<SVGElement>
@@ -77,12 +93,18 @@ const DATA = {
   ],
   contact: {
     social: {
-      GitHub: { name: "GitHub", url: "#", icon: Icons.github },
+      GitHub: { name: "GitHub", url: "https://github.com/D4cLoves", icon: Icons.github },
     },
   },
 }
 
-function DockDemo({ onAccountClick }: { onAccountClick: () => void }) {
+function DockDemo({
+  onAccountClick,
+  onSettingsClick,
+}: {
+  onAccountClick: () => void
+  onSettingsClick: () => void
+}) {
   return (
     <div className="flex flex-col items-center justify-center">
       <TooltipProvider>
@@ -97,10 +119,10 @@ function DockDemo({ onAccountClick }: { onAccountClick: () => void }) {
             <DockIcon key={item.label}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  {item.label === "Account" ? (
+                  {item.label === "Account" || item.label === "Settings" ? (
                     <button
                       type="button"
-                      onClick={onAccountClick}
+                      onClick={item.label === "Account" ? onAccountClick : onSettingsClick}
                       aria-label={item.label}
                       className={cn(
                         buttonVariants({ variant: "ghost", size: "icon" }),
@@ -138,6 +160,8 @@ function DockDemo({ onAccountClick }: { onAccountClick: () => void }) {
                   <a
                     href={social.url}
                     aria-label={social.name}
+                    target="_blank"
+                    rel="noreferrer"
                     className={cn(
                       buttonVariants({ variant: "ghost", size: "icon" }),
                       "size-[3rem] rounded-full"
@@ -204,6 +228,107 @@ function formatElapsed(seconds: number) {
     .padStart(2, "0")}`
 }
 
+function parseDurationToSeconds(value: string) {
+  const text = value.trim()
+  if (!text) {
+    return 0
+  }
+
+  const normalized = text.replace(",", ".")
+
+  const fullMatch = normalized.match(
+    /^(?:(\d+)\.)?(\d{1,2}):(\d{2}):(\d{2})(?:\.\d+)?$/
+  )
+  if (fullMatch) {
+    const days = Number(fullMatch[1] ?? "0")
+    const hours = Number(fullMatch[2] ?? "0")
+    const minutes = Number(fullMatch[3] ?? "0")
+    const seconds = Number(fullMatch[4] ?? "0")
+    return days * 86400 + hours * 3600 + minutes * 60 + seconds
+  }
+
+  const shortMatch = normalized.match(/^(\d{1,2}):(\d{2})(?:\.\d+)?$/)
+  if (shortMatch) {
+    const minutes = Number(shortMatch[1] ?? "0")
+    const seconds = Number(shortMatch[2] ?? "0")
+    return minutes * 60 + seconds
+  }
+
+  const numericSeconds = Number(normalized)
+  if (!Number.isNaN(numericSeconds)) {
+    return Math.max(0, Math.floor(numericSeconds))
+  }
+
+  return 0
+}
+
+function calculateSessionDurationSeconds(
+  session: SessionDto,
+  activeElapsedSeconds = 0
+) {
+  const parsedDuration = parseDurationToSeconds(session.duration)
+  if (parsedDuration > 0) {
+    return session.isActive ? Math.max(parsedDuration, activeElapsedSeconds) : parsedDuration
+  }
+
+  const startedMs = new Date(session.startedAt).getTime()
+  if (Number.isNaN(startedMs)) {
+    return 0
+  }
+
+  if (session.isActive) {
+    return Math.max(0, Math.floor((Date.now() - startedMs) / 1000))
+  }
+
+  const endedMs = session.endedAt ? new Date(session.endedAt).getTime() : Number.NaN
+  if (Number.isNaN(endedMs)) {
+    return 0
+  }
+
+  return Math.max(0, Math.floor((endedMs - startedMs) / 1000))
+}
+
+function formatDurationLabel(seconds: number) {
+  const safe = Math.max(0, seconds)
+  const hours = Math.floor(safe / 3600)
+  const minutes = Math.floor((safe % 3600) / 60)
+  const secs = safe % 60
+
+  return `${hours.toString().padStart(2, "0")}:${minutes
+    .toString()
+    .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
+}
+
+function calculateSessionOverlapSeconds(
+  session: SessionDto,
+  windowStartMs: number,
+  windowEndMs: number,
+  activeElapsedSeconds = 0
+) {
+  const startedMs = new Date(session.startedAt).getTime()
+  if (Number.isNaN(startedMs)) {
+    return 0
+  }
+
+  const fallbackDurationSeconds = calculateSessionDurationSeconds(session, activeElapsedSeconds)
+  const endedFromFieldMs = session.endedAt ? new Date(session.endedAt).getTime() : Number.NaN
+  let endedMs = Number.isNaN(endedFromFieldMs)
+    ? startedMs + fallbackDurationSeconds * 1000
+    : endedFromFieldMs
+
+  if (session.isActive) {
+    endedMs = Math.min(Date.now(), Math.max(endedMs, startedMs))
+  }
+
+  const overlapStart = Math.max(startedMs, windowStartMs)
+  const overlapEnd = Math.min(endedMs, windowEndMs)
+  if (overlapEnd <= overlapStart) {
+    return 0
+  }
+
+  return Math.floor((overlapEnd - overlapStart) / 1000)
+}
+
 export function CabinetPage() {
   const navigate = useNavigate()
   const { markGuest } = useAuthSession()
@@ -220,12 +345,25 @@ export function CabinetPage() {
   const [startSessionTitle, setStartSessionTitle] = useState("")
   const [startSessionGoal, setStartSessionGoal] = useState("")
   const [sessionTaskDraft, setSessionTaskDraft] = useState("")
-  const [isSubmittingTask, setIsSubmittingTask] = useState(false)
+  const [, setIsSubmittingTask] = useState(false)
   const [isEndingSession, setIsEndingSession] = useState(false)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [isAccountDialogOpen, setIsAccountDialogOpen] = useState(false)
+  const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false)
+  const [isSessionDetailsDialogOpen, setIsSessionDetailsDialogOpen] = useState(false)
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [accountActionError, setAccountActionError] = useState<string | null>(null)
+  const [accountProfile, setAccountProfile] = useState<CurrentUserProfileResponse | null>(null)
+  const [isAccountProfileLoading, setIsAccountProfileLoading] = useState(false)
+  const [accountProfileError, setAccountProfileError] = useState<string | null>(null)
+  const [streak, setStreak] = useState<StreakDto | null>(null)
+  const [uiSettings, setUiSettings] = useState<UiSettings>(() => loadUiSettings())
+
+  useEffect(() => {
+    applyUiSettings(uiSettings)
+    saveUiSettings(uiSettings)
+  }, [uiSettings])
 
   const loadWorkspace = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
     if (!silent) {
@@ -233,14 +371,16 @@ export function CabinetPage() {
     }
     setWorkspaceError(null)
     try {
-      const [nextAreas, nextProjects, nextSessions] = await Promise.all([
+      const [nextAreas, nextProjects, nextSessions, nextStreak] = await Promise.all([
         getAreas(),
         getProjects(),
         getSessions(),
+        getStreak(),
       ])
       setAreas(nextAreas)
       setProjects(nextProjects)
       setSessions(nextSessions)
+      setStreak(nextStreak)
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unable to load project workspace"
@@ -323,7 +463,111 @@ export function CabinetPage() {
     [sessions]
   )
 
-  const recentSessions = useMemo(() => projectSessions.slice(0, 4), [projectSessions])
+  const workspaceSummary = useMemo(
+    () => ({
+      totalAreas: areas.length,
+      totalProjects: projects.length,
+      totalSessions: sessions.length,
+    }),
+    [areas.length, projects.length, sessions]
+  )
+
+  const activeAccent = useMemo(
+    () => ACCENT_OPTIONS.find((option) => option.id === uiSettings.accentId) ?? ACCENT_OPTIONS[0],
+    [uiSettings.accentId]
+  )
+
+  const loadAccountProfile = useCallback(
+    async ({ silent = false }: { silent?: boolean } = {}) => {
+      if (!silent) {
+        setIsAccountProfileLoading(true)
+        setAccountProfileError(null)
+      }
+      try {
+        const profile = await getCurrentUserProfile()
+        setAccountProfile(profile)
+      } catch (error) {
+        if (silent) {
+          return
+        }
+        const message =
+          error instanceof Error ? error.message : "Failed to load account profile"
+        setAccountProfileError(message)
+        setAccountProfile(null)
+      } finally {
+        if (!silent) {
+          setIsAccountProfileLoading(false)
+        }
+      }
+    },
+    []
+  )
+
+  useEffect(() => {
+    if (isAccountDialogOpen && !accountProfile) {
+      void loadAccountProfile()
+    }
+  }, [accountProfile, isAccountDialogOpen, loadAccountProfile])
+
+  useEffect(() => {
+    void loadAccountProfile({ silent: true })
+  }, [loadAccountProfile])
+
+  useEffect(() => {
+    const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    if (!browserTimeZone) {
+      return
+    }
+
+    void updateUserTimeZone({ timeZoneId: browserTimeZone })
+      .then(() => loadWorkspace({ silent: true }))
+      .catch(() => {
+        // Ignore timezone sync failures and keep backend default.
+      })
+  }, [loadWorkspace])
+
+  const displayName = useMemo(() => {
+    const rawName = accountProfile?.name?.trim()
+    if (rawName) {
+      return rawName
+    }
+
+    const rawEmail = accountProfile?.email?.trim()
+    if (!rawEmail) {
+      return "Operator"
+    }
+
+    return rawEmail.split("@")[0] || "Operator"
+  }, [accountProfile?.email, accountProfile?.name])
+
+  const displayInitials = useMemo(() => {
+    const parts = displayName
+      .split(/\s+/)
+      .map((part) => part.trim())
+      .filter(Boolean)
+    if (parts.length === 0) {
+      return "OP"
+    }
+    if (parts.length === 1) {
+      return parts[0].slice(0, 2).toUpperCase()
+    }
+    return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase()
+  }, [displayName])
+
+  const todayFocusSeconds = useMemo(() => {
+    const dayStart = new Date()
+    dayStart.setHours(0, 0, 0, 0)
+    const windowStartMs = dayStart.getTime()
+    const windowEndMs = Date.now()
+
+    return sessions.reduce(
+      (total, session) =>
+        total + calculateSessionOverlapSeconds(session, windowStartMs, windowEndMs, elapsedSeconds),
+      0
+    )
+  }, [elapsedSeconds, sessions])
+
+  const recentSessions = useMemo(() => projectSessions, [projectSessions])
 
   const sessionsLast7 = useMemo(() => {
     const threshold = Date.now() - 7 * 24 * 60 * 60 * 1000
@@ -347,15 +591,66 @@ export function CabinetPage() {
     [focusedProject?.targetHours]
   )
 
-  const demoElapsedHours = useMemo(() => {
-    const modeled = sessionsLast7 * 1.6 + activeDaysLast14 * 0.7
-    return Math.min(goalHours, Number(modeled.toFixed(1)))
-  }, [activeDaysLast14, goalHours, sessionsLast7])
-
-  const goalProgressPercent = useMemo(
-    () => Math.min(100, Math.round((demoElapsedHours / goalHours) * 100)),
-    [demoElapsedHours, goalHours]
+  const totalTrackedSeconds = useMemo(
+    () =>
+      projectSessions.reduce(
+        (accumulator, session) => accumulator + calculateSessionDurationSeconds(session),
+        0
+      ),
+    [projectSessions]
   )
+
+  const activeSessionStoredSeconds = useMemo(
+    () => (activeProjectSession ? calculateSessionDurationSeconds(activeProjectSession, elapsedSeconds) : 0),
+    [activeProjectSession, elapsedSeconds]
+  )
+
+  const effectiveTrackedSeconds = useMemo(() => {
+    if (!activeProjectSession?.isActive) {
+      return totalTrackedSeconds
+    }
+
+    return Math.max(
+      0,
+      totalTrackedSeconds - activeSessionStoredSeconds + Math.max(activeSessionStoredSeconds, elapsedSeconds)
+    )
+  }, [activeProjectSession, activeSessionStoredSeconds, elapsedSeconds, totalTrackedSeconds])
+
+  const rawTrackedHours = useMemo(
+    () => effectiveTrackedSeconds / 3600,
+    [effectiveTrackedSeconds]
+  )
+
+  const trackedElapsedHours = useMemo(
+    () => Number(rawTrackedHours.toFixed(3)),
+    [rawTrackedHours]
+  )
+
+  const rawGoalProgressPercent = useMemo(
+    () => Math.min(100, (rawTrackedHours / goalHours) * 100),
+    [rawTrackedHours, goalHours]
+  )
+
+  const visibleGoalProgressPercent = useMemo(() => {
+    if (rawGoalProgressPercent <= 0) {
+      return 0
+    }
+
+    // Keep tiny progress visually noticeable while preserving accurate label.
+    return Math.max(rawGoalProgressPercent, 0.1)
+  }, [rawGoalProgressPercent])
+
+  const goalProgressLabel = useMemo(() => {
+    if (rawGoalProgressPercent <= 0) {
+      return "0.00"
+    }
+
+    if (rawGoalProgressPercent < 0.01) {
+      return "<0.01"
+    }
+
+    return rawGoalProgressPercent.toFixed(2)
+  }, [rawGoalProgressPercent])
 
   const activeSessionTodoItems = useMemo<PlayfulTodoItem[]>(
     () =>
@@ -366,6 +661,19 @@ export function CabinetPage() {
       })) ?? [],
     [activeSession]
   )
+
+  const selectedSession = useMemo(
+    () => sessions.find((session) => session.id === selectedSessionId) ?? null,
+    [selectedSessionId, sessions]
+  )
+
+  const selectedSessionDurationSeconds = useMemo(() => {
+    if (!selectedSession) {
+      return 0
+    }
+
+    return calculateSessionDurationSeconds(selectedSession, elapsedSeconds)
+  }, [elapsedSeconds, selectedSession])
 
   useEffect(() => {
     if (!activeSession) {
@@ -566,16 +874,20 @@ export function CabinetPage() {
             <DockDemo
               onAccountClick={() => {
                 setAccountActionError(null)
+                setAccountProfileError(null)
                 setIsAccountDialogOpen(true)
+              }}
+              onSettingsClick={() => {
+                setIsSettingsDialogOpen(true)
               }}
             />
           </div>
         </div>
 
-        <div className="flex flex-1 overflow-hidden pl-4 pr-2 pb-[40px] pt-4">
+        <div className="flex flex-1 overflow-hidden px-3 pb-[40px] pt-3 md:pl-4 md:pr-2 md:pt-4">
           <div className="h-full w-full">
-            <div className="flex h-full min-h-0 gap-4">
-              <div className="flex h-full w-[min(340px,26vw)] min-w-[240px] flex-none flex-col gap-4">
+            <div className="grid h-full min-h-0 grid-cols-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+              <div className="flex min-h-0 w-full flex-col gap-4">
               <section className="supports-backdrop-blur:bg-white/10 supports-backdrop-blur:dark:bg-black/10 flex h-[390px] flex-none flex-col rounded-2xl border shadow-sm backdrop-blur-md">
                 <div className="border-b border-border px-4 py-3">
                   <p className="text-center text-sm font-semibold">Focus Summary</p>
@@ -584,24 +896,25 @@ export function CabinetPage() {
                 <div className="grid h-full grid-rows-[auto_1fr_auto] gap-4 p-4">
                   <div className="flex items-center gap-3 rounded-xl border border-border bg-muted/25 px-3 py-2.5">
                     <div className="flex size-8 items-center justify-center rounded-full border border-border bg-card text-xs font-semibold">
-                      VL
+                      {displayInitials}
                     </div>
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">Welcome back, Vlad</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        Pick a project from the tree to inspect details.
-                      </p>
+                      <p className="text-sm font-semibold">Welcome, {displayName}</p>
                     </div>
                   </div>
 
                   <div className="flex min-h-0 flex-col items-center justify-center rounded-xl border border-border bg-muted/40 px-3 py-4 text-center">
                     <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Today Focus</p>
-                    <p className="mt-2 text-[clamp(32px,3.4vw,52px)] font-semibold leading-none [font-variant-numeric:tabular-nums]">1h 34m</p>
+                    <p className="mt-2 w-full text-center font-mono text-[clamp(18px,1.6vw,30px)] font-semibold leading-none [font-variant-numeric:tabular-nums]">
+                      {formatDurationLabel(todayFocusSeconds)}
+                    </p>
                   </div>
 
                   <div className="rounded-lg border border-border bg-muted/25 px-3 py-2">
                     <p className="text-[11px] text-muted-foreground">Streak</p>
-                    <p className="text-sm font-medium">4 days</p>
+                    <p className="text-sm font-medium">
+                      {(streak?.currentStreak ?? 0)} {(streak?.currentStreak ?? 0) === 1 ? "day" : "days"}
+                    </p>
                   </div>
                 </div>
               </section>
@@ -616,7 +929,7 @@ export function CabinetPage() {
               </div>
             </div>
 
-            <section className="supports-backdrop-blur:bg-white/10 supports-backdrop-blur:dark:bg-black/10 flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border shadow-sm backdrop-blur-md">
+            <section className="supports-backdrop-blur:bg-white/10 supports-backdrop-blur:dark:bg-black/10 flex min-h-[420px] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border shadow-sm backdrop-blur-md lg:min-h-0">
               <div className="flex justify-center border-b border-border px-4 py-3">
                 <p className="text-sm font-semibold">Project Workspace</p>
               </div>
@@ -635,86 +948,107 @@ export function CabinetPage() {
                 )}
 
                 {!workspaceError && !isWorkspaceLoading && !focusedProject && (
-                  <article className="flex min-h-0 flex-col items-center justify-center rounded-xl border border-border bg-muted/25 p-8 text-center">
-                    <Sparkles className="size-6 text-muted-foreground" />
-                    <h3 className="mt-3 text-lg font-semibold">Project Details Panel</h3>
-                    <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-                      Right-click a project in the files tree, or open its menu and press
-                      <span className="font-medium text-foreground"> Properties</span>.
-                      The focused project details will appear here.
-                    </p>
+                  <article className="grid min-h-0 flex-1 place-items-center rounded-xl border border-border bg-muted/25 p-8 text-center">
+                    <div className="mx-auto w-full max-w-xl">
+                      <Sparkles className="mx-auto size-6 text-muted-foreground" />
+                      <h3 className="mt-3 text-lg font-semibold">Project Details Panel</h3>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Right-click a project in the files tree, or open its menu and press
+                        <span className="font-medium text-foreground"> Properties</span>.
+                        The focused project details will appear here.
+                      </p>
+                    </div>
                   </article>
                 )}
 
                 {!workspaceError && !isWorkspaceLoading && focusedProject && (
                   <div className="grid h-full min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,0.65fr)] xl:grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)]">
-                      <article className="rounded-xl border border-border bg-muted/25 p-4">
-                        <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Focused Project</p>
-                        <h3 className="mt-1 text-xl font-semibold">{focusedProject.name}</h3>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {focusedArea ? focusedArea.name : "Area not found"}
-                        </p>
-                        <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                          {focusedProject.goal}
-                        </p>
+                      <article className="flex flex-col overflow-hidden rounded-xl border border-border bg-muted/25">
+                        <div className="flex justify-center border-b border-border px-4 py-3">
+                          <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                            Focused Project
+                          </p>
+                        </div>
+                        <div className="p-4">
+                          <h3 className="text-xl font-semibold">{focusedProject.name}</h3>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {focusedArea ? focusedArea.name : "Area not found"}
+                          </p>
+                          <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                            {focusedProject.goal}
+                          </p>
 
-                        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                          <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
-                            <p className="text-[11px] text-muted-foreground">Primary Task</p>
-                            <p className="mt-1 line-clamp-2 text-sm font-medium">
-                              {focusedProject.primaryTask || "Not set"}
-                            </p>
-                          </div>
-                          <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
-                            <p className="text-[11px] text-muted-foreground">Target Hours</p>
-                            <p className="mt-1 text-sm font-medium">
-                              {focusedProject.targetHours !== null
-                                ? `${focusedProject.targetHours}h`
-                                : "Not set"}
-                            </p>
-                          </div>
-                          <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
-                            <p className="text-[11px] text-muted-foreground">Sessions</p>
-                            <p className="mt-1 text-sm font-medium">{focusedProject.sessionsCount}</p>
-                          </div>
-                          <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
-                            <p className="text-[11px] text-muted-foreground">State</p>
-                            <p className="mt-1 text-sm font-medium">
-                              {activeProjectSession
-                                ? "Active session"
-                                : "Ready to launch"}
-                            </p>
+                          <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                            <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                              <p className="text-[11px] text-muted-foreground">Primary Task</p>
+                              <p className="mt-1 line-clamp-2 text-sm font-medium">
+                                {focusedProject.primaryTask || "Not set"}
+                              </p>
+                            </div>
+                            <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                              <p className="text-[11px] text-muted-foreground">Target Hours</p>
+                              <p className="mt-1 text-sm font-medium">
+                                {focusedProject.targetHours !== null
+                                  ? `${focusedProject.targetHours}h`
+                                  : "Not set"}
+                              </p>
+                            </div>
+                            <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                              <p className="text-[11px] text-muted-foreground">Sessions</p>
+                              <p className="mt-1 text-sm font-medium">{focusedProject.sessionsCount}</p>
+                            </div>
+                            <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                              <p className="text-[11px] text-muted-foreground">State</p>
+                              <p className="mt-1 text-sm font-medium">
+                                {activeProjectSession
+                                  ? "Active session"
+                                  : "Ready to launch"}
+                              </p>
+                            </div>
                           </div>
                         </div>
                       </article>
 
-                      <article className="rounded-xl border border-border bg-muted/25 p-4">
-                        <p className="text-center text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Goal Time Slider</p>
-                        <div className="mt-4 rounded-lg border border-border bg-background/70 px-4 py-4">
+                      <article className="flex min-h-[240px] flex-col overflow-hidden rounded-xl border border-border bg-muted/25">
+                        <div className="flex justify-center border-b border-border px-4 py-3">
+                          <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                            Goal Time Slider
+                          </p>
+                        </div>
+                        <div className="flex min-h-0 flex-1 items-center p-4">
+                          <div className="w-full rounded-lg border border-border bg-background/70 px-4 py-4">
                           <div className="h-3 w-full overflow-hidden rounded-full bg-muted/70">
                             <div
-                              className="h-full rounded-full bg-gradient-to-r from-primary/70 via-primary to-primary shadow-[0_0_18px_hsl(var(--primary)/0.55)] transition-all duration-700"
-                              style={{ width: `${goalProgressPercent}%` }}
+                              className="h-full rounded-full transition-all duration-700"
+                              style={{
+                                width: `${visibleGoalProgressPercent}%`,
+                                background:
+                                  "linear-gradient(90deg, rgb(var(--cabinet-accent-rgb) / 0.72), rgb(var(--cabinet-accent-rgb)), rgb(var(--cabinet-accent-rgb) / 0.82))",
+                                boxShadow: "0 0 18px rgb(var(--cabinet-accent-rgb) / 0.5)",
+                              }}
                             />
                           </div>
                           <div className="mt-4 flex items-end justify-between">
                             <p className="text-3xl font-semibold leading-none [font-variant-numeric:tabular-nums]">
-                              {goalProgressPercent}%
+                              {goalProgressLabel}%
                             </p>
                             <p className="text-sm font-medium [font-variant-numeric:tabular-nums]">
-                              {demoElapsedHours}h / {goalHours}h
+                              {trackedElapsedHours}h / {goalHours}h
                             </p>
                           </div>
                         </div>
+                        </div>
                       </article>
 
-                      <article className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-muted/25 p-5 xl:row-span-2">
+                      <article className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-muted/25 xl:row-span-2">
                         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_18%,hsl(var(--primary)/0.18),transparent_42%),radial-gradient(circle_at_88%_82%,hsl(var(--primary)/0.12),transparent_44%)]" />
-                        <div className="relative z-10 flex h-full flex-col">
+                        <div className="relative z-10 flex justify-center border-b border-border px-4 py-3">
                           <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
                             Session Command Deck
                           </p>
-                          <h4 className="mt-2 text-2xl font-semibold leading-tight">
+                        </div>
+                        <div className="relative z-10 flex min-h-0 flex-1 flex-col p-5">
+                          <h4 className="text-2xl font-semibold leading-tight">
                             Ready to lock in a focused sprint?
                           </h4>
                           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
@@ -723,7 +1057,13 @@ export function CabinetPage() {
                           </p>
 
                           {activeSession ? (
-                            <div className="mt-4 rounded-xl border border-border bg-background/70 px-4 py-3 text-sm text-muted-foreground">
+                            <div
+                              className="mt-4 rounded-xl border border-border bg-background/70 px-4 py-3 text-sm text-muted-foreground"
+                              style={{
+                                borderColor: "rgb(var(--cabinet-accent-rgb) / 0.45)",
+                                boxShadow: "0 0 0 1px rgb(var(--cabinet-accent-rgb) / 0.16) inset",
+                              }}
+                            >
                               Active now: <span className="font-medium text-foreground">{activeSession.title || "Untitled session"}</span>
                             </div>
                           ) : null}
@@ -735,7 +1075,7 @@ export function CabinetPage() {
 
                           <div className="mt-5 flex flex-1 items-center justify-center">
                             <Button
-                              className="h-24 w-full max-w-2xl rounded-full border border-primary/30 bg-primary text-primary-foreground text-xl font-semibold shadow-[0_14px_34px_hsl(var(--primary)/0.45)] transition-all hover:scale-[1.01] hover:shadow-[0_18px_40px_hsl(var(--primary)/0.55)]"
+                              className="h-24 w-full max-w-2xl rounded-full border border-transparent bg-[rgb(var(--cabinet-accent-rgb)/0.82)] text-white text-xl font-semibold shadow-[0_14px_34px_rgb(var(--cabinet-accent-rgb)/0.42)] transition-all duration-200 hover:scale-[1.01] hover:bg-[rgb(var(--cabinet-accent-rgb)/1)] hover:shadow-[0_18px_40px_rgb(var(--cabinet-accent-rgb)/0.58)]"
                               onClick={() => {
                                 openStartSessionDialog()
                               }}
@@ -760,38 +1100,59 @@ export function CabinetPage() {
                         </div>
                       </article>
 
-                      <article className="rounded-xl border border-border bg-muted/25 p-4">
-                        <p className="text-center text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Project Snapshot</p>
-                        <div className="mt-3 space-y-2">
-                          <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
-                            <p className="text-[11px] text-muted-foreground">Last Start</p>
-                            <p className="mt-1 text-sm font-medium">
-                              {projectSessions[0]
-                                ? formatStartedAt(projectSessions[0].startedAt)
-                                : "None"}
+                      <article className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-muted/25">
+                        <div className="flex justify-center border-b border-border px-4 py-3">
+                          <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                            Project Snapshot
+                          </p>
+                        </div>
+                        <div className="flex min-h-0 flex-1 p-4">
+                          <div className="flex min-h-0 flex-1 flex-col justify-between rounded-lg border border-border bg-background/70 p-4">
+                            <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                              Quick Pulse
                             </p>
-                          </div>
-                          <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
-                            <p className="text-[11px] text-muted-foreground">Goal Summary</p>
-                            <p className="mt-1 line-clamp-3 text-sm font-medium">
-                              {focusedProject.goal || "No goal set"}
+                            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                              <div className="rounded-lg border border-border bg-muted/30 px-3 py-3">
+                                <p className="text-[11px] text-muted-foreground">Sessions / 7d</p>
+                                <p className="mt-1 text-2xl font-semibold [font-variant-numeric:tabular-nums]">
+                                  {sessionsLast7}
+                                </p>
+                              </div>
+                              <div className="rounded-lg border border-border bg-muted/30 px-3 py-3">
+                                <p className="text-[11px] text-muted-foreground">Active days / 14d</p>
+                                <p className="mt-1 text-2xl font-semibold [font-variant-numeric:tabular-nums]">
+                                  {activeDaysLast14}
+                                </p>
+                              </div>
+                            </div>
+                            <p className="pt-3 text-xs text-muted-foreground">
+                              Fast glance metrics for current project rhythm.
                             </p>
                           </div>
                         </div>
                       </article>
 
-                      <article className="flex min-h-0 flex-col rounded-xl border border-border bg-muted/25 p-4">
-                        <p className="text-center text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Activity Feed</p>
-                        <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-auto pr-1">
+                      <article className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-muted/25">
+                        <div className="flex justify-center border-b border-border px-4 py-3">
+                          <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                            Activity Feed
+                          </p>
+                        </div>
+                        <div className="min-h-0 flex-1 space-y-2 overflow-auto p-4 pr-3">
                           {recentSessions.length === 0 ? (
                             <div className="rounded-lg border border-border bg-background/70 px-3 py-2 text-sm text-muted-foreground">
                               No recent sessions.
                             </div>
                           ) : (
                             recentSessions.map((session) => (
-                              <div
+                              <button
                                 key={session.id}
-                                className="rounded-lg border border-border bg-background/75 px-3 py-2"
+                                type="button"
+                                onClick={() => {
+                                  setSelectedSessionId(session.id)
+                                  setIsSessionDetailsDialogOpen(true)
+                                }}
+                                className="w-full rounded-md border border-border bg-background/75 px-3 py-2 text-left transition-colors duration-200 hover:bg-[rgb(var(--cabinet-accent-rgb)/0.14)]"
                               >
                                 <p className="truncate text-sm font-medium">
                                   {session.title || "Untitled session"}
@@ -799,7 +1160,7 @@ export function CabinetPage() {
                                 <p className="text-xs text-muted-foreground">
                                   {formatStartedAt(session.startedAt)}
                                 </p>
-                              </div>
+                              </button>
                             ))
                           )}
                         </div>
@@ -819,16 +1180,137 @@ export function CabinetPage() {
           setIsAccountDialogOpen(nextOpen)
           if (!nextOpen) {
             setAccountActionError(null)
+            setAccountProfileError(null)
           }
         }}
       >
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Аккаунт</DialogTitle>
             <DialogDescription>
-              Выйти из текущего аккаунта?
+              Информация о проекте и управление текущей сессией аккаунта.
             </DialogDescription>
           </DialogHeader>
+          <div className="grid gap-4 overflow-y-auto pr-1">
+            <section className="rounded-xl border border-border bg-muted/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                Данные аккаунта
+              </p>
+              {isAccountProfileLoading ? (
+                <div className="mt-3 rounded-lg border border-border bg-background/70 px-3 py-2 text-sm text-muted-foreground">
+                  Загружаем данные аккаунта...
+                </div>
+              ) : null}
+              {accountProfileError ? (
+                <div className="mt-3 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                  {accountProfileError}
+                </div>
+              ) : null}
+              {!isAccountProfileLoading && !accountProfileError ? (
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                    <p className="text-[11px] text-muted-foreground">Имя</p>
+                    <p className="mt-1 text-sm font-medium">
+                      {accountProfile?.name || "Не указано"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                    <p className="text-[11px] text-muted-foreground">Почта</p>
+                    <p className="mt-1 text-sm font-medium">
+                      {accountProfile?.email || "Не указана"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                    <p className="text-[11px] text-muted-foreground">Пароль</p>
+                    <p className="mt-1 text-sm font-medium">••••••••</p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                    <p className="text-[11px] text-muted-foreground">Статус безопасности</p>
+                    <p className="mt-1 text-sm font-medium">Пароль скрыт сервером</p>
+                  </div>
+                </div>
+              ) : null}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsAccountDialogOpen(false)
+                    setAccountActionError(null)
+                    navigate("/recover-code")
+                  }}
+                >
+                  Сменить пароль
+                </Button>
+                <Button variant="outline" disabled>
+                  Редактировать профиль (скоро)
+                </Button>
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-border bg-muted/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                Статистика workspace
+              </p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                  <p className="text-[11px] text-muted-foreground">Областей</p>
+                  <p className="mt-1 text-sm font-medium">{workspaceSummary.totalAreas}</p>
+                </div>
+                <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                  <p className="text-[11px] text-muted-foreground">Проектов</p>
+                  <p className="mt-1 text-sm font-medium">{workspaceSummary.totalProjects}</p>
+                </div>
+                <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                  <p className="text-[11px] text-muted-foreground">Сессий</p>
+                  <p className="mt-1 text-sm font-medium">{workspaceSummary.totalSessions}</p>
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-border bg-muted/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                Фокус-проект
+              </p>
+              {!focusedProject ? (
+                <div className="mt-3 rounded-lg border border-border bg-background/70 px-3 py-2 text-sm text-muted-foreground">
+                  Выбери проект в дереве workspace, чтобы увидеть его детали здесь.
+                </div>
+              ) : (
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                    <p className="text-[11px] text-muted-foreground">Название</p>
+                    <p className="mt-1 text-sm font-medium">{focusedProject.name}</p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                    <p className="text-[11px] text-muted-foreground">Область</p>
+                    <p className="mt-1 text-sm font-medium">
+                      {focusedArea ? focusedArea.name : "Area not found"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                    <p className="text-[11px] text-muted-foreground">Основная задача</p>
+                    <p className="mt-1 line-clamp-2 text-sm font-medium">
+                      {focusedProject.primaryTask || "Не задано"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                    <p className="text-[11px] text-muted-foreground">Целевые часы</p>
+                    <p className="mt-1 text-sm font-medium">
+                      {focusedProject.targetHours !== null
+                        ? `${focusedProject.targetHours}h`
+                        : "Не задано"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-background/70 px-3 py-2 sm:col-span-2">
+                    <p className="text-[11px] text-muted-foreground">Цель</p>
+                    <p className="mt-1 break-words text-sm font-medium">
+                      {focusedProject.goal || "Цель не задана"}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </section>
+          </div>
           {accountActionError ? (
             <p className="text-xs text-destructive">{accountActionError}</p>
           ) : null}
@@ -838,7 +1320,7 @@ export function CabinetPage() {
               onClick={() => setIsAccountDialogOpen(false)}
               disabled={isLoggingOut}
             >
-              Отмена
+              Закрыть
             </Button>
             <Button
               variant="destructive"
@@ -848,6 +1330,282 @@ export function CabinetPage() {
               disabled={isLoggingOut}
             >
               {isLoggingOut ? "Выходим..." : "Выйти"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isSettingsDialogOpen}
+        onOpenChange={(nextOpen: boolean) => {
+          setIsSettingsDialogOpen(nextOpen)
+        }}
+      >
+        <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Settings</DialogTitle>
+            <DialogDescription>
+              Visual preferences for typography, scale, and accent tone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 overflow-y-auto pr-1">
+            <section className="rounded-xl border border-border bg-muted/25 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                  Font Family
+                </p>
+                <span className="text-xs text-muted-foreground">10 presets</span>
+              </div>
+
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {FONT_OPTIONS.map((font) => {
+                  const isSelected = uiSettings.fontId === font.id
+                  return (
+                    <button
+                      key={font.id}
+                      type="button"
+                      onClick={() => {
+                        setUiSettings((previous) => ({ ...previous, fontId: font.id }))
+                      }}
+                      className={cn(
+                        "rounded-lg border bg-background/80 px-3 py-2 text-left transition-all hover:bg-background",
+                        isSelected ? "text-foreground" : "text-muted-foreground"
+                      )}
+                      style={{
+                        fontFamily: font.family,
+                        borderColor: isSelected
+                          ? "rgb(var(--cabinet-accent-rgb) / 0.55)"
+                          : undefined,
+                        boxShadow: isSelected
+                          ? "0 0 0 1px rgb(var(--cabinet-accent-rgb) / 0.2) inset"
+                          : undefined,
+                      }}
+                    >
+                      <p className="text-sm font-semibold">{font.label}</p>
+                      <p className="mt-1 text-xs">{font.preview}</p>
+                    </button>
+                  )
+                })}
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-border bg-muted/25 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                  Font Size
+                </p>
+                <span
+                  className="text-sm font-semibold"
+                  style={{ color: "rgb(var(--cabinet-accent-rgb))" }}
+                >
+                  {uiSettings.fontScale}%
+                </span>
+              </div>
+
+              <div className="mt-4">
+                <input
+                  type="range"
+                  min={85}
+                  max={125}
+                  step={1}
+                  value={uiSettings.fontScale}
+                  onChange={(event) => {
+                    const next = Number(event.target.value)
+                    setUiSettings((previous) => ({ ...previous, fontScale: next }))
+                  }}
+                  className="h-2 w-full cursor-pointer rounded-lg bg-muted/70"
+                  style={{ accentColor: `rgb(${activeAccent.rgb})` }}
+                />
+              </div>
+              <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                <span>85%</span>
+                <span>100%</span>
+                <span>125%</span>
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-border bg-muted/25 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                  Accent Color
+                </p>
+                <span className="text-xs text-muted-foreground">UI highlight tone</span>
+              </div>
+
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {ACCENT_OPTIONS.map((option) => {
+                  const isSelected = uiSettings.accentId === option.id
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => {
+                        setUiSettings((previous) => ({ ...previous, accentId: option.id }))
+                      }}
+                      className={cn(
+                        "flex items-center gap-3 rounded-lg border bg-background/80 px-3 py-2 text-left transition-all hover:bg-background",
+                        isSelected ? "text-foreground" : "text-muted-foreground"
+                      )}
+                      style={{
+                        borderColor: isSelected
+                          ? "rgb(var(--cabinet-accent-rgb) / 0.55)"
+                          : undefined,
+                        boxShadow: isSelected
+                          ? "0 0 0 1px rgb(var(--cabinet-accent-rgb) / 0.2) inset"
+                          : undefined,
+                      }}
+                    >
+                      <span
+                        className="size-4 rounded-full border border-black/10 dark:border-white/15"
+                        style={{ backgroundColor: `rgb(${option.rgb})` }}
+                      />
+                      <span className="text-sm font-medium">{option.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </section>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setUiSettings(DEFAULT_UI_SETTINGS)}
+            >
+              Reset defaults
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setIsSettingsDialogOpen(false)}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isSessionDetailsDialogOpen}
+        onOpenChange={(nextOpen: boolean) => {
+          setIsSessionDetailsDialogOpen(nextOpen)
+          if (!nextOpen) {
+            setSelectedSessionId(null)
+          }
+        }}
+      >
+        <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Session Details</DialogTitle>
+            <DialogDescription>
+              Полная информация по выбранной рабочей сессии.
+            </DialogDescription>
+          </DialogHeader>
+
+          {!selectedSession ? (
+            <div className="rounded-lg border border-border bg-background/70 px-3 py-3 text-sm text-muted-foreground">
+              Сессия не найдена.
+            </div>
+          ) : (
+            <div className="grid gap-4 overflow-y-auto pr-1">
+              <section className="rounded-xl border border-border bg-muted/25 p-4">
+                <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                  Overview
+                </p>
+                <h4 className="mt-1 text-lg font-semibold">
+                  {selectedSession.title || "Untitled session"}
+                </h4>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                    <p className="text-[11px] text-muted-foreground">Status</p>
+                    <p className="mt-1 text-sm font-medium">
+                      {selectedSession.isActive ? "Active" : "Completed"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                    <p className="text-[11px] text-muted-foreground">Duration</p>
+                    <p className="mt-1 text-sm font-medium [font-variant-numeric:tabular-nums]">
+                      {formatDurationLabel(selectedSessionDurationSeconds)}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                    <p className="text-[11px] text-muted-foreground">Started</p>
+                    <p className="mt-1 text-sm font-medium">
+                      {formatStartedAt(selectedSession.startedAt)}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                    <p className="text-[11px] text-muted-foreground">Ended</p>
+                    <p className="mt-1 text-sm font-medium">
+                      {selectedSession.endedAt
+                        ? formatStartedAt(selectedSession.endedAt)
+                        : selectedSession.isActive
+                          ? "In progress"
+                          : "Not finished"}
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-border bg-muted/25 p-4">
+                <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                  Goal & Notes
+                </p>
+                <div className="mt-3 space-y-2">
+                  <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                    <p className="text-[11px] text-muted-foreground">Goal</p>
+                    <p className="mt-1 text-sm font-medium">
+                      {selectedSession.goal || "No goal specified"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                    <p className="text-[11px] text-muted-foreground">Notes</p>
+                    <p className="mt-1 text-sm font-medium">
+                      {selectedSession.notes || "No notes"}
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-border bg-muted/25 p-4">
+                <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                  Tasks
+                </p>
+                {selectedSession.tasks.length === 0 ? (
+                  <div className="mt-3 rounded-lg border border-border bg-background/70 px-3 py-2 text-sm text-muted-foreground">
+                    No tasks in this session.
+                  </div>
+                ) : (
+                  <div className="mt-3 space-y-2">
+                    {selectedSession.tasks.map((task) => (
+                      <div
+                        key={task.id}
+                        className="rounded-lg border border-border bg-background/75 px-3 py-2"
+                      >
+                        <p className="text-sm font-medium">
+                          {task.isCompleted ? "✓" : "○"} {task.description}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {task.isCompleted
+                            ? `Completed: ${
+                                task.completedAt ? formatStartedAt(task.completedAt) : "yes"
+                              }`
+                            : "Pending"}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsSessionDetailsDialogOpen(false)}
+            >
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -987,3 +1745,4 @@ export function CabinetPage() {
     </div>
   )
 }
+

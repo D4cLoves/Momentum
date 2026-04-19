@@ -38,7 +38,7 @@ public class AreaRepository : IAreaRepository
   }
 
   public async Task UpdateAsync(Area area)
-  {
+  { 
     _context.Areas.Update(area);
   }
 

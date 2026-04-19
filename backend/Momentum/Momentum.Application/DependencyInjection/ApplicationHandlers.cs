@@ -16,6 +16,8 @@ using Momentum.Application.Features.Sessions.Start;
 using Momentum.Application.Features.Sessions.Tasks.Create;
 using Momentum.Application.Features.Sessions.Tasks.Delete;
 using Momentum.Application.Features.Sessions.Tasks.UpdateStatus;
+using Momentum.Application.Features.Streak.Abstraction;
+using Momentum.Application.Features.Streak.Service;
 using Momentum.Application.Features.Users.Login;
 using Momentum.Application.Features.Users.ForgotPassword;
 using Momentum.Application.Features.Users.Refresh;
@@ -53,6 +55,7 @@ public static class ApplicationHandlers
 		services.AddScoped<CreateSessionTaskHandler>();
 		services.AddScoped<UpdateSessionTaskStatusHandler>();
 		services.AddScoped<DeleteSessionTaskHandler>();
+		services.AddScoped<IStreakService, StreakService>();
 
 		// auth
 		services.AddScoped<LoginUserHandler>();

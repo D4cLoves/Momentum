@@ -12,6 +12,10 @@ namespace Momentum.Infrastructure.Data
     public DbSet<ProjectSession> ProjectSessions { get; set; }
     public DbSet<SessionTask> SessionTasks { get; set; }
     public DbSet<RefreshToken> RefreshTokens { get; set; }
+    
+    public DbSet<UserStreak> UserStreaks { get; set; }
+    public DbSet<StreakActivity> StreakActivities { get; set; }
+    
 
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options) { }
 

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { Link, useLocation, useNavigate } from "react-router-dom"
 import {
   HomeIcon,
   BarChart3,
@@ -132,8 +132,8 @@ function DockDemo({
                       <item.icon className="size-[18px]" />
                     </button>
                   ) : (
-                    <a
-                      href={item.href}
+                    <Link
+                      to={item.href}
                       aria-label={item.label}
                       className={cn(
                         buttonVariants({ variant: "ghost", size: "icon" }),
@@ -141,7 +141,7 @@ function DockDemo({
                       )}
                     >
                       <item.icon className="size-[18px]" />
-                    </a>
+                    </Link>
                   )}
                 </TooltipTrigger>
                 <TooltipContent>
@@ -299,6 +299,14 @@ function formatDurationLabel(seconds: number) {
     .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
 }
 
+function formatHoursMinutesSeconds(seconds: number) {
+  const safe = Math.max(0, Math.floor(seconds))
+  const hours = Math.floor(safe / 3600)
+  const minutes = Math.floor((safe % 3600) / 60)
+  const secs = safe % 60
+  return `${hours}h ${minutes.toString().padStart(2, "0")}m ${secs.toString().padStart(2, "0")}s`
+}
+
 function calculateSessionOverlapSeconds(
   session: SessionDto,
   windowStartMs: number,
@@ -330,7 +338,12 @@ function calculateSessionOverlapSeconds(
 }
 
 export function CabinetPage() {
+  const location = useLocation()
   const navigate = useNavigate()
+  const dialogFromQuery = useMemo(() => {
+    const value = new URLSearchParams(location.search).get("dialog")
+    return value === "account" || value === "settings" ? value : null
+  }, [location.search])
   const { markGuest } = useAuthSession()
   const [areas, setAreas] = useState<AreaDto[]>([])
   const [projects, setProjects] = useState<ProjectDto[]>([])
@@ -348,8 +361,12 @@ export function CabinetPage() {
   const [, setIsSubmittingTask] = useState(false)
   const [isEndingSession, setIsEndingSession] = useState(false)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
-  const [isAccountDialogOpen, setIsAccountDialogOpen] = useState(false)
-  const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false)
+  const [isAccountDialogOpen, setIsAccountDialogOpen] = useState(
+    () => new URLSearchParams(location.search).get("dialog") === "account"
+  )
+  const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(
+    () => new URLSearchParams(location.search).get("dialog") === "settings"
+  )
   const [isSessionDetailsDialogOpen, setIsSessionDetailsDialogOpen] = useState(false)
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
@@ -510,6 +527,39 @@ export function CabinetPage() {
   }, [accountProfile, isAccountDialogOpen, loadAccountProfile])
 
   useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const dialog = params.get("dialog")
+    if (dialog === "account") {
+      setAccountActionError(null)
+      setAccountProfileError(null)
+    }
+    setIsAccountDialogOpen(dialog === "account")
+    setIsSettingsDialogOpen(dialog === "settings")
+  }, [location.search])
+
+  const handleAccountDialogOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      setIsAccountDialogOpen(nextOpen)
+      if (!nextOpen && dialogFromQuery === "account") {
+        setAccountActionError(null)
+        setAccountProfileError(null)
+        navigate("/cabinet", { replace: true })
+      }
+    },
+    [dialogFromQuery, navigate]
+  )
+
+  const handleSettingsDialogOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      setIsSettingsDialogOpen(nextOpen)
+      if (!nextOpen && dialogFromQuery === "settings") {
+        navigate("/cabinet", { replace: true })
+      }
+    },
+    [dialogFromQuery, navigate]
+  )
+
+  useEffect(() => {
     void loadAccountProfile({ silent: true })
   }, [loadAccountProfile])
 
@@ -619,11 +669,6 @@ export function CabinetPage() {
   const rawTrackedHours = useMemo(
     () => effectiveTrackedSeconds / 3600,
     [effectiveTrackedSeconds]
-  )
-
-  const trackedElapsedHours = useMemo(
-    () => Number(rawTrackedHours.toFixed(3)),
-    [rawTrackedHours]
   )
 
   const rawGoalProgressPercent = useMemo(
@@ -866,7 +911,8 @@ export function CabinetPage() {
       <div
         className={cn(
           "flex h-full min-h-0 flex-col transition-all duration-300",
-          activeSession && "pointer-events-none blur-[12px]"
+          activeSession && "pointer-events-none blur-[12px]",
+          dialogFromQuery && (isAccountDialogOpen || isSettingsDialogOpen) && "pointer-events-none opacity-0"
         )}
       >
         <div className="pointer-events-none fixed inset-x-0 bottom-[18px] z-50 flex justify-center px-4">
@@ -1033,7 +1079,7 @@ export function CabinetPage() {
                               {goalProgressLabel}%
                             </p>
                             <p className="text-sm font-medium [font-variant-numeric:tabular-nums]">
-                              {trackedElapsedHours}h / {goalHours}h
+                              {formatHoursMinutesSeconds(effectiveTrackedSeconds)} / {formatHoursMinutesSeconds(goalHours * 3600)}
                             </p>
                           </div>
                         </div>
@@ -1176,13 +1222,7 @@ export function CabinetPage() {
 
       <Dialog
         open={isAccountDialogOpen}
-        onOpenChange={(nextOpen: boolean) => {
-          setIsAccountDialogOpen(nextOpen)
-          if (!nextOpen) {
-            setAccountActionError(null)
-            setAccountProfileError(null)
-          }
-        }}
+        onOpenChange={handleAccountDialogOpenChange}
       >
         <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-2xl">
           <DialogHeader>
@@ -1234,7 +1274,7 @@ export function CabinetPage() {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    setIsAccountDialogOpen(false)
+                    handleAccountDialogOpenChange(false)
                     setAccountActionError(null)
                     navigate("/recover-code")
                   }}
@@ -1317,7 +1357,7 @@ export function CabinetPage() {
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setIsAccountDialogOpen(false)}
+              onClick={() => handleAccountDialogOpenChange(false)}
               disabled={isLoggingOut}
             >
               Закрыть
@@ -1337,9 +1377,7 @@ export function CabinetPage() {
 
       <Dialog
         open={isSettingsDialogOpen}
-        onOpenChange={(nextOpen: boolean) => {
-          setIsSettingsDialogOpen(nextOpen)
-        }}
+        onOpenChange={handleSettingsDialogOpenChange}
       >
         <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-3xl">
           <DialogHeader>
@@ -1477,7 +1515,7 @@ export function CabinetPage() {
             </Button>
             <Button
               variant="outline"
-              onClick={() => setIsSettingsDialogOpen(false)}
+              onClick={() => handleSettingsDialogOpenChange(false)}
             >
               Close
             </Button>

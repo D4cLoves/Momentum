@@ -13,10 +13,12 @@ import { RecoverCodePage } from './pages/RecoverCodePage'
 import { RecoverResetPasswordPage } from './pages/RecoverResetPasswordPage'
 import { RecoverCodeVerifyPage } from './pages/RecoverCodeVerifyPage'
 import { RegisterPage } from './pages/RegisterPage'
+import { StatisticsPage } from './pages/StatisticsPage'
 
 function App() {
   const location = useLocation()
-  const isCabinetRoute = location.pathname.startsWith('/cabinet')
+  const isCabinetRoute =
+    location.pathname.startsWith('/cabinet') || location.pathname.startsWith('/statistics')
 
   const appRoutes = (
     <Routes>
@@ -39,6 +41,14 @@ function App() {
         element={
           <ProtectedRoute>
             <CabinetCustomPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/statistics"
+        element={
+          <ProtectedRoute>
+            <StatisticsPage />
           </ProtectedRoute>
         }
       />

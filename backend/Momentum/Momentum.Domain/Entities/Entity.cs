@@ -41,12 +41,3 @@ public abstract class Entity : IEquatable<Entity>
     /// </summary>
     protected void UpdateTimestamp() => UpdatedAt = DateTime.UtcNow;
 }
-
-/// <summary>
-/// РРЅС‚РµСЂС„РµР№СЃ РґР»СЏ РѕР±РѕР·РЅР°С‡РµРЅРёСЏ РєРѕСЂРЅСЏ Р°РіСЂРµРіР°С‚Р°
-/// </summary>
-public interface IAggregateRoot
-{
-}
-
-

@@ -37,6 +37,26 @@ public static class AuthCookie
 				Expires = DateTimeOffset.UtcNow.Add(settings.Value.RefreshExpires),
 			});
 	}
-}
 
+    public static void ClearAuthCookies(HttpContext context)
+    {
+        context.Response.Cookies.Delete(
+            AccessTokenCookieName,
+            new CookieOptions
+            {
+                Path = "/",
+                SameSite = SameSiteMode.Lax,
+                Secure = context.Request.IsHttps,
+            });
+
+        context.Response.Cookies.Delete(
+            RefreshTokenCookieName,
+            new CookieOptions
+            {
+                Path = "/api/users/refresh",
+                SameSite = SameSiteMode.Lax,
+                Secure = context.Request.IsHttps,
+            });
+    }
+}
 

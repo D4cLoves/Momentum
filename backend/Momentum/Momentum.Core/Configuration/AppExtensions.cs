@@ -1,6 +1,7 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Momentum.Core.EndpointsSettings;
 using Momentum.Infrastructure.Data;
+using Momentum.Infrastructure.Data.Identity;
 using Serilog;
 using Serilog.Events;
 
@@ -11,6 +12,7 @@ public static class AppExtensions
     public static IApplicationBuilder Configure(this WebApplication app)
     {
         ApplyDatabaseMigrations(app);
+        SeedIdentityRoles(app);
 
         app.UseSerilogRequestLogging(options =>
         {
@@ -83,5 +85,11 @@ public static class AppExtensions
         ApplicationDbContext finalDbContext = finalScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         finalDbContext.Database.Migrate();
     }
-}
 
+    private static void SeedIdentityRoles(WebApplication app)
+    {
+        using IServiceScope scope = app.Services.CreateScope();
+        IdentityRoleSeeder.SeedRolesAsync(scope.ServiceProvider).GetAwaiter().GetResult();
+        Log.Information("Identity roles seeded successfully");
+    }
+}

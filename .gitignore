@@ -20,6 +20,7 @@ frontend/node_modules/
 frontend/dist/
 frontend/.env
 backend/Momentum/node_modules/
+backend/Momentum/.env
 
 # OS
 Thumbs.db

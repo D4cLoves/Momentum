@@ -11,6 +11,24 @@ export type LoginRequest = {
   password: string
 }
 
+export type ForgotPasswordRequest = {
+  email: string
+}
+
+export type VerifyResetCodeRequest = {
+  email: string
+  code: string
+}
+
+export type VerifyResetCodeResponse = {
+  sessionToken: string
+}
+
+export type ResetPasswordRequest = {
+  sessionToken: string
+  newPassword: string
+}
+
 export type LoginResponse = {
   accessToken: string
 }
@@ -33,6 +51,39 @@ export async function refreshSession(): Promise<void> {
   return apiRequest<void>('/api/users/refresh', {
     method: 'POST',
     body: JSON.stringify({ refreshTokens: '' }),
+    skipAuthRefresh: true,
+  })
+}
+
+export async function logoutUser(): Promise<void> {
+  return apiRequest<void>('/api/users/logout', {
+    method: 'POST',
+    skipAuthRefresh: true,
+  })
+}
+
+export async function forgotPassword(payload: ForgotPasswordRequest): Promise<void> {
+  return apiRequest<void>('/api/users/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    skipAuthRefresh: true,
+  })
+}
+
+export async function verifyResetCode(
+  payload: VerifyResetCodeRequest,
+): Promise<VerifyResetCodeResponse> {
+  return apiRequest<VerifyResetCodeResponse>('/api/users/verify-reset-code', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    skipAuthRefresh: true,
+  })
+}
+
+export async function resetPassword(payload: ResetPasswordRequest): Promise<void> {
+  return apiRequest<void>('/api/users/reset-password', {
+    method: 'POST',
+    body: JSON.stringify(payload),
     skipAuthRefresh: true,
   })
 }

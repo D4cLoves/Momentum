@@ -17,8 +17,11 @@ using Momentum.Application.Features.Sessions.Tasks.Create;
 using Momentum.Application.Features.Sessions.Tasks.Delete;
 using Momentum.Application.Features.Sessions.Tasks.UpdateStatus;
 using Momentum.Application.Features.Users.Login;
+using Momentum.Application.Features.Users.ForgotPassword;
 using Momentum.Application.Features.Users.Refresh;
 using Momentum.Application.Features.Users.Register;
+using Momentum.Application.Features.Users.ResetPassword;
+using Momentum.Application.Features.Users.VerifyResetCode;
 
 namespace Momentum.Application.DependencyInjection;
 
@@ -53,6 +56,9 @@ public static class ApplicationHandlers
 
 		// auth
 		services.AddScoped<LoginUserHandler>();
+		services.AddScoped<ForgotPasswordHandler>();
+		services.AddScoped<ResetPasswordHandler>();
+		services.AddScoped<VerifyResetCodeHandler>();
 		services.AddScoped<RefreshTokensHandler>();
 		services.AddScoped<RegisterUserHandler>();
 

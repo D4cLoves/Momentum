@@ -9,6 +9,9 @@ import { CabinetPage } from './pages/CabinetPage'
 import { CabinetCustomPage } from './pages/CabinetCustomPage'
 import { LandingPage } from './pages/LandingPage'
 import { LoginPage } from './pages/LoginPage'
+import { RecoverCodePage } from './pages/RecoverCodePage'
+import { RecoverResetPasswordPage } from './pages/RecoverResetPasswordPage'
+import { RecoverCodeVerifyPage } from './pages/RecoverCodeVerifyPage'
 import { RegisterPage } from './pages/RegisterPage'
 
 function App() {
@@ -19,6 +22,9 @@ function App() {
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/recover-code" element={<RecoverCodePage />} />
+      <Route path="/recover-code/verify" element={<RecoverCodeVerifyPage />} />
+      <Route path="/recover-code/reset" element={<RecoverResetPasswordPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route
         path="/cabinet"

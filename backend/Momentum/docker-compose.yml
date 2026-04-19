@@ -19,6 +19,13 @@ services:
       ASPNETCORE_URLS: "http://+:8080"
       Redis__ConnectionString: "redis:6379"
       ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=momentum_dev;Username=postgres;Password=postgres"
+      EmailSettings__Host: "${EMAIL_HOST:-smtp.mail.ru}"
+      EmailSettings__Port: "${EMAIL_PORT:-587}"
+      EmailSettings__UseSsl: "${EMAIL_USE_SSL:-false}"
+      EmailSettings__UserName: "${EMAIL_USERNAME:?EMAIL_USERNAME is required}"
+      EmailSettings__Password: "${EMAIL_PASSWORD:?EMAIL_PASSWORD is required}"
+      EmailSettings__FromEmail: "${EMAIL_FROM_EMAIL:?EMAIL_FROM_EMAIL is required}"
+      EmailSettings__FromName: "${EMAIL_FROM_NAME:-Momentum}"
     depends_on:
       - redis
       - postgres

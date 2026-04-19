@@ -33,6 +33,12 @@ export type LoginResponse = {
   accessToken: string
 }
 
+export type CurrentUserProfileResponse = {
+  id: string
+  name: string | null
+  email: string | null
+}
+
 export async function registerUser(payload: RegisterRequest): Promise<void> {
   return apiRequest<void>('/api/users/register', {
     method: 'POST',
@@ -60,6 +66,10 @@ export async function logoutUser(): Promise<void> {
     method: 'POST',
     skipAuthRefresh: true,
   })
+}
+
+export async function getCurrentUserProfile(): Promise<CurrentUserProfileResponse> {
+  return apiRequest<CurrentUserProfileResponse>('/api/users/me')
 }
 
 export async function forgotPassword(payload: ForgotPasswordRequest): Promise<void> {

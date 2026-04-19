@@ -11,6 +11,15 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import {
+  ACCENT_OPTIONS,
+  DEFAULT_UI_SETTINGS,
+  FONT_OPTIONS,
+  applyUiSettings,
+  loadUiSettings,
+  saveUiSettings,
+  type UiSettings,
+} from "@/lib/ui-settings"
 import { useAuthSession } from "@/auth/auth-session"
 import { buttonVariants, Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -36,7 +45,11 @@ import {
   type PlayfulTodoItem,
 } from "@/components/animate-ui/components/community/playful-todolist"
 import { RadixFilesDemo } from "@/components/RadixFilesDemo"
-import { logoutUser } from "@/api/authApi"
+import {
+  getCurrentUserProfile,
+  type CurrentUserProfileResponse,
+  logoutUser,
+} from "@/api/authApi"
 import {
   createSessionTask,
   endSession,
@@ -77,12 +90,18 @@ const DATA = {
   ],
   contact: {
     social: {
-      GitHub: { name: "GitHub", url: "#", icon: Icons.github },
+      GitHub: { name: "GitHub", url: "https://github.com/D4cLoves", icon: Icons.github },
     },
   },
 }
 
-function DockDemo({ onAccountClick }: { onAccountClick: () => void }) {
+function DockDemo({
+  onAccountClick,
+  onSettingsClick,
+}: {
+  onAccountClick: () => void
+  onSettingsClick: () => void
+}) {
   return (
     <div className="flex flex-col items-center justify-center">
       <TooltipProvider>
@@ -97,10 +116,10 @@ function DockDemo({ onAccountClick }: { onAccountClick: () => void }) {
             <DockIcon key={item.label}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  {item.label === "Account" ? (
+                  {item.label === "Account" || item.label === "Settings" ? (
                     <button
                       type="button"
-                      onClick={onAccountClick}
+                      onClick={item.label === "Account" ? onAccountClick : onSettingsClick}
                       aria-label={item.label}
                       className={cn(
                         buttonVariants({ variant: "ghost", size: "icon" }),
@@ -138,6 +157,8 @@ function DockDemo({ onAccountClick }: { onAccountClick: () => void }) {
                   <a
                     href={social.url}
                     aria-label={social.name}
+                    target="_blank"
+                    rel="noreferrer"
                     className={cn(
                       buttonVariants({ variant: "ghost", size: "icon" }),
                       "size-[3rem] rounded-full"
@@ -220,12 +241,22 @@ export function CabinetPage() {
   const [startSessionTitle, setStartSessionTitle] = useState("")
   const [startSessionGoal, setStartSessionGoal] = useState("")
   const [sessionTaskDraft, setSessionTaskDraft] = useState("")
-  const [isSubmittingTask, setIsSubmittingTask] = useState(false)
+  const [, setIsSubmittingTask] = useState(false)
   const [isEndingSession, setIsEndingSession] = useState(false)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [isAccountDialogOpen, setIsAccountDialogOpen] = useState(false)
+  const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [accountActionError, setAccountActionError] = useState<string | null>(null)
+  const [accountProfile, setAccountProfile] = useState<CurrentUserProfileResponse | null>(null)
+  const [isAccountProfileLoading, setIsAccountProfileLoading] = useState(false)
+  const [accountProfileError, setAccountProfileError] = useState<string | null>(null)
+  const [uiSettings, setUiSettings] = useState<UiSettings>(() => loadUiSettings())
+
+  useEffect(() => {
+    applyUiSettings(uiSettings)
+    saveUiSettings(uiSettings)
+  }, [uiSettings])
 
   const loadWorkspace = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
     if (!silent) {
@@ -323,7 +354,43 @@ export function CabinetPage() {
     [sessions]
   )
 
-  const recentSessions = useMemo(() => projectSessions.slice(0, 4), [projectSessions])
+  const workspaceSummary = useMemo(
+    () => ({
+      totalAreas: areas.length,
+      totalProjects: projects.length,
+      totalSessions: sessions.length,
+    }),
+    [areas.length, projects.length, sessions]
+  )
+
+  const activeAccent = useMemo(
+    () => ACCENT_OPTIONS.find((option) => option.id === uiSettings.accentId) ?? ACCENT_OPTIONS[0],
+    [uiSettings.accentId]
+  )
+
+  const loadAccountProfile = useCallback(async () => {
+    setIsAccountProfileLoading(true)
+    setAccountProfileError(null)
+    try {
+      const profile = await getCurrentUserProfile()
+      setAccountProfile(profile)
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Не удалось загрузить данные аккаунта"
+      setAccountProfileError(message)
+      setAccountProfile(null)
+    } finally {
+      setIsAccountProfileLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isAccountDialogOpen) {
+      void loadAccountProfile()
+    }
+  }, [isAccountDialogOpen, loadAccountProfile])
+
+  const recentSessions = useMemo(() => projectSessions, [projectSessions])
 
   const sessionsLast7 = useMemo(() => {
     const threshold = Date.now() - 7 * 24 * 60 * 60 * 1000
@@ -566,16 +633,20 @@ export function CabinetPage() {
             <DockDemo
               onAccountClick={() => {
                 setAccountActionError(null)
+                setAccountProfileError(null)
                 setIsAccountDialogOpen(true)
+              }}
+              onSettingsClick={() => {
+                setIsSettingsDialogOpen(true)
               }}
             />
           </div>
         </div>
 
-        <div className="flex flex-1 overflow-hidden pl-4 pr-2 pb-[40px] pt-4">
+        <div className="flex flex-1 overflow-hidden px-3 pb-[40px] pt-3 md:pl-4 md:pr-2 md:pt-4">
           <div className="h-full w-full">
-            <div className="flex h-full min-h-0 gap-4">
-              <div className="flex h-full w-[min(340px,26vw)] min-w-[240px] flex-none flex-col gap-4">
+            <div className="grid h-full min-h-0 grid-cols-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+              <div className="flex min-h-0 w-full flex-col gap-4">
               <section className="supports-backdrop-blur:bg-white/10 supports-backdrop-blur:dark:bg-black/10 flex h-[390px] flex-none flex-col rounded-2xl border shadow-sm backdrop-blur-md">
                 <div className="border-b border-border px-4 py-3">
                   <p className="text-center text-sm font-semibold">Focus Summary</p>
@@ -616,7 +687,7 @@ export function CabinetPage() {
               </div>
             </div>
 
-            <section className="supports-backdrop-blur:bg-white/10 supports-backdrop-blur:dark:bg-black/10 flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border shadow-sm backdrop-blur-md">
+            <section className="supports-backdrop-blur:bg-white/10 supports-backdrop-blur:dark:bg-black/10 flex min-h-[420px] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border shadow-sm backdrop-blur-md lg:min-h-0">
               <div className="flex justify-center border-b border-border px-4 py-3">
                 <p className="text-sm font-semibold">Project Workspace</p>
               </div>
@@ -635,21 +706,25 @@ export function CabinetPage() {
                 )}
 
                 {!workspaceError && !isWorkspaceLoading && !focusedProject && (
-                  <article className="flex min-h-0 flex-col items-center justify-center rounded-xl border border-border bg-muted/25 p-8 text-center">
-                    <Sparkles className="size-6 text-muted-foreground" />
-                    <h3 className="mt-3 text-lg font-semibold">Project Details Panel</h3>
-                    <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-                      Right-click a project in the files tree, or open its menu and press
-                      <span className="font-medium text-foreground"> Properties</span>.
-                      The focused project details will appear here.
-                    </p>
+                  <article className="grid min-h-0 flex-1 place-items-center rounded-xl border border-border bg-muted/25 p-8 text-center">
+                    <div className="mx-auto w-full max-w-xl">
+                      <Sparkles className="mx-auto size-6 text-muted-foreground" />
+                      <h3 className="mt-3 text-lg font-semibold">Project Details Panel</h3>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Right-click a project in the files tree, or open its menu and press
+                        <span className="font-medium text-foreground"> Properties</span>.
+                        The focused project details will appear here.
+                      </p>
+                    </div>
                   </article>
                 )}
 
                 {!workspaceError && !isWorkspaceLoading && focusedProject && (
                   <div className="grid h-full min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,0.65fr)] xl:grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)]">
                       <article className="rounded-xl border border-border bg-muted/25 p-4">
-                        <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Focused Project</p>
+                        <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                          Focused Project
+                        </p>
                         <h3 className="mt-1 text-xl font-semibold">{focusedProject.name}</h3>
                         <p className="mt-1 text-xs text-muted-foreground">
                           {focusedArea ? focusedArea.name : "Area not found"}
@@ -688,13 +763,23 @@ export function CabinetPage() {
                         </div>
                       </article>
 
-                      <article className="rounded-xl border border-border bg-muted/25 p-4">
-                        <p className="text-center text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Goal Time Slider</p>
-                        <div className="mt-4 rounded-lg border border-border bg-background/70 px-4 py-4">
+                      <article className="overflow-hidden rounded-xl border border-border bg-muted/25">
+                        <div className="flex justify-center border-b border-border px-4 py-3">
+                          <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                            Goal Time Slider
+                          </p>
+                        </div>
+                        <div className="p-4">
+                          <div className="rounded-lg border border-border bg-background/70 px-4 py-4">
                           <div className="h-3 w-full overflow-hidden rounded-full bg-muted/70">
                             <div
-                              className="h-full rounded-full bg-gradient-to-r from-primary/70 via-primary to-primary shadow-[0_0_18px_hsl(var(--primary)/0.55)] transition-all duration-700"
-                              style={{ width: `${goalProgressPercent}%` }}
+                              className="h-full rounded-full transition-all duration-700"
+                              style={{
+                                width: `${goalProgressPercent}%`,
+                                background:
+                                  "linear-gradient(90deg, rgb(var(--cabinet-accent-rgb) / 0.72), rgb(var(--cabinet-accent-rgb)), rgb(var(--cabinet-accent-rgb) / 0.82))",
+                                boxShadow: "0 0 18px rgb(var(--cabinet-accent-rgb) / 0.5)",
+                              }}
                             />
                           </div>
                           <div className="mt-4 flex items-end justify-between">
@@ -705,6 +790,7 @@ export function CabinetPage() {
                               {demoElapsedHours}h / {goalHours}h
                             </p>
                           </div>
+                        </div>
                         </div>
                       </article>
 
@@ -723,7 +809,13 @@ export function CabinetPage() {
                           </p>
 
                           {activeSession ? (
-                            <div className="mt-4 rounded-xl border border-border bg-background/70 px-4 py-3 text-sm text-muted-foreground">
+                            <div
+                              className="mt-4 rounded-xl border border-border bg-background/70 px-4 py-3 text-sm text-muted-foreground"
+                              style={{
+                                borderColor: "rgb(var(--cabinet-accent-rgb) / 0.45)",
+                                boxShadow: "0 0 0 1px rgb(var(--cabinet-accent-rgb) / 0.16) inset",
+                              }}
+                            >
                               Active now: <span className="font-medium text-foreground">{activeSession.title || "Untitled session"}</span>
                             </div>
                           ) : null}
@@ -760,9 +852,13 @@ export function CabinetPage() {
                         </div>
                       </article>
 
-                      <article className="rounded-xl border border-border bg-muted/25 p-4">
-                        <p className="text-center text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Project Snapshot</p>
-                        <div className="mt-3 space-y-2">
+                      <article className="overflow-hidden rounded-xl border border-border bg-muted/25">
+                        <div className="flex justify-center border-b border-border px-4 py-3">
+                          <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                            Project Snapshot
+                          </p>
+                        </div>
+                        <div className="space-y-2 p-4">
                           <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
                             <p className="text-[11px] text-muted-foreground">Last Start</p>
                             <p className="mt-1 text-sm font-medium">
@@ -780,9 +876,13 @@ export function CabinetPage() {
                         </div>
                       </article>
 
-                      <article className="flex min-h-0 flex-col rounded-xl border border-border bg-muted/25 p-4">
-                        <p className="text-center text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Activity Feed</p>
-                        <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-auto pr-1">
+                      <article className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-muted/25">
+                        <div className="flex justify-center border-b border-border px-4 py-3">
+                          <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                            Activity Feed
+                          </p>
+                        </div>
+                        <div className="min-h-0 flex-1 space-y-2 overflow-auto p-4 pr-3">
                           {recentSessions.length === 0 ? (
                             <div className="rounded-lg border border-border bg-background/70 px-3 py-2 text-sm text-muted-foreground">
                               No recent sessions.
@@ -819,16 +919,137 @@ export function CabinetPage() {
           setIsAccountDialogOpen(nextOpen)
           if (!nextOpen) {
             setAccountActionError(null)
+            setAccountProfileError(null)
           }
         }}
       >
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Аккаунт</DialogTitle>
             <DialogDescription>
-              Выйти из текущего аккаунта?
+              Информация о проекте и управление текущей сессией аккаунта.
             </DialogDescription>
           </DialogHeader>
+          <div className="grid gap-4 overflow-y-auto pr-1">
+            <section className="rounded-xl border border-border bg-muted/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                Данные аккаунта
+              </p>
+              {isAccountProfileLoading ? (
+                <div className="mt-3 rounded-lg border border-border bg-background/70 px-3 py-2 text-sm text-muted-foreground">
+                  Загружаем данные аккаунта...
+                </div>
+              ) : null}
+              {accountProfileError ? (
+                <div className="mt-3 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                  {accountProfileError}
+                </div>
+              ) : null}
+              {!isAccountProfileLoading && !accountProfileError ? (
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                    <p className="text-[11px] text-muted-foreground">Имя</p>
+                    <p className="mt-1 text-sm font-medium">
+                      {accountProfile?.name || "Не указано"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                    <p className="text-[11px] text-muted-foreground">Почта</p>
+                    <p className="mt-1 text-sm font-medium">
+                      {accountProfile?.email || "Не указана"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                    <p className="text-[11px] text-muted-foreground">Пароль</p>
+                    <p className="mt-1 text-sm font-medium">••••••••</p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                    <p className="text-[11px] text-muted-foreground">Статус безопасности</p>
+                    <p className="mt-1 text-sm font-medium">Пароль скрыт сервером</p>
+                  </div>
+                </div>
+              ) : null}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsAccountDialogOpen(false)
+                    setAccountActionError(null)
+                    navigate("/recover-code")
+                  }}
+                >
+                  Сменить пароль
+                </Button>
+                <Button variant="outline" disabled>
+                  Редактировать профиль (скоро)
+                </Button>
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-border bg-muted/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                Статистика workspace
+              </p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                  <p className="text-[11px] text-muted-foreground">Областей</p>
+                  <p className="mt-1 text-sm font-medium">{workspaceSummary.totalAreas}</p>
+                </div>
+                <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                  <p className="text-[11px] text-muted-foreground">Проектов</p>
+                  <p className="mt-1 text-sm font-medium">{workspaceSummary.totalProjects}</p>
+                </div>
+                <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                  <p className="text-[11px] text-muted-foreground">Сессий</p>
+                  <p className="mt-1 text-sm font-medium">{workspaceSummary.totalSessions}</p>
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-border bg-muted/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                Фокус-проект
+              </p>
+              {!focusedProject ? (
+                <div className="mt-3 rounded-lg border border-border bg-background/70 px-3 py-2 text-sm text-muted-foreground">
+                  Выбери проект в дереве workspace, чтобы увидеть его детали здесь.
+                </div>
+              ) : (
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                    <p className="text-[11px] text-muted-foreground">Название</p>
+                    <p className="mt-1 text-sm font-medium">{focusedProject.name}</p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                    <p className="text-[11px] text-muted-foreground">Область</p>
+                    <p className="mt-1 text-sm font-medium">
+                      {focusedArea ? focusedArea.name : "Area not found"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                    <p className="text-[11px] text-muted-foreground">Основная задача</p>
+                    <p className="mt-1 line-clamp-2 text-sm font-medium">
+                      {focusedProject.primaryTask || "Не задано"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+                    <p className="text-[11px] text-muted-foreground">Целевые часы</p>
+                    <p className="mt-1 text-sm font-medium">
+                      {focusedProject.targetHours !== null
+                        ? `${focusedProject.targetHours}h`
+                        : "Не задано"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-background/70 px-3 py-2 sm:col-span-2">
+                    <p className="text-[11px] text-muted-foreground">Цель</p>
+                    <p className="mt-1 break-words text-sm font-medium">
+                      {focusedProject.goal || "Цель не задана"}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </section>
+          </div>
           {accountActionError ? (
             <p className="text-xs text-destructive">{accountActionError}</p>
           ) : null}
@@ -838,7 +1059,7 @@ export function CabinetPage() {
               onClick={() => setIsAccountDialogOpen(false)}
               disabled={isLoggingOut}
             >
-              Отмена
+              Закрыть
             </Button>
             <Button
               variant="destructive"
@@ -848,6 +1069,156 @@ export function CabinetPage() {
               disabled={isLoggingOut}
             >
               {isLoggingOut ? "Выходим..." : "Выйти"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isSettingsDialogOpen}
+        onOpenChange={(nextOpen: boolean) => {
+          setIsSettingsDialogOpen(nextOpen)
+        }}
+      >
+        <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Settings</DialogTitle>
+            <DialogDescription>
+              Visual preferences for typography, scale, and accent tone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 overflow-y-auto pr-1">
+            <section className="rounded-xl border border-border bg-muted/25 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                  Font Family
+                </p>
+                <span className="text-xs text-muted-foreground">10 presets</span>
+              </div>
+
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {FONT_OPTIONS.map((font) => {
+                  const isSelected = uiSettings.fontId === font.id
+                  return (
+                    <button
+                      key={font.id}
+                      type="button"
+                      onClick={() => {
+                        setUiSettings((previous) => ({ ...previous, fontId: font.id }))
+                      }}
+                      className={cn(
+                        "rounded-lg border bg-background/80 px-3 py-2 text-left transition-all hover:bg-background",
+                        isSelected ? "text-foreground" : "text-muted-foreground"
+                      )}
+                      style={{
+                        fontFamily: font.family,
+                        borderColor: isSelected
+                          ? "rgb(var(--cabinet-accent-rgb) / 0.55)"
+                          : undefined,
+                        boxShadow: isSelected
+                          ? "0 0 0 1px rgb(var(--cabinet-accent-rgb) / 0.2) inset"
+                          : undefined,
+                      }}
+                    >
+                      <p className="text-sm font-semibold">{font.label}</p>
+                      <p className="mt-1 text-xs">{font.preview}</p>
+                    </button>
+                  )
+                })}
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-border bg-muted/25 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                  Font Size
+                </p>
+                <span
+                  className="text-sm font-semibold"
+                  style={{ color: "rgb(var(--cabinet-accent-rgb))" }}
+                >
+                  {uiSettings.fontScale}%
+                </span>
+              </div>
+
+              <div className="mt-4">
+                <input
+                  type="range"
+                  min={85}
+                  max={125}
+                  step={1}
+                  value={uiSettings.fontScale}
+                  onChange={(event) => {
+                    const next = Number(event.target.value)
+                    setUiSettings((previous) => ({ ...previous, fontScale: next }))
+                  }}
+                  className="h-2 w-full cursor-pointer rounded-lg bg-muted/70"
+                  style={{ accentColor: `rgb(${activeAccent.rgb})` }}
+                />
+              </div>
+              <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                <span>85%</span>
+                <span>100%</span>
+                <span>125%</span>
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-border bg-muted/25 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                  Accent Color
+                </p>
+                <span className="text-xs text-muted-foreground">UI highlight tone</span>
+              </div>
+
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {ACCENT_OPTIONS.map((option) => {
+                  const isSelected = uiSettings.accentId === option.id
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => {
+                        setUiSettings((previous) => ({ ...previous, accentId: option.id }))
+                      }}
+                      className={cn(
+                        "flex items-center gap-3 rounded-lg border bg-background/80 px-3 py-2 text-left transition-all hover:bg-background",
+                        isSelected ? "text-foreground" : "text-muted-foreground"
+                      )}
+                      style={{
+                        borderColor: isSelected
+                          ? "rgb(var(--cabinet-accent-rgb) / 0.55)"
+                          : undefined,
+                        boxShadow: isSelected
+                          ? "0 0 0 1px rgb(var(--cabinet-accent-rgb) / 0.2) inset"
+                          : undefined,
+                      }}
+                    >
+                      <span
+                        className="size-4 rounded-full border border-black/10 dark:border-white/15"
+                        style={{ backgroundColor: `rgb(${option.rgb})` }}
+                      />
+                      <span className="text-sm font-medium">{option.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </section>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setUiSettings(DEFAULT_UI_SETTINGS)}
+            >
+              Reset defaults
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setIsSettingsDialogOpen(false)}
+            >
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

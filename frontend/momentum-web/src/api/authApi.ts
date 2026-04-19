@@ -39,6 +39,10 @@ export type CurrentUserProfileResponse = {
   email: string | null
 }
 
+export type UpdateUserTimeZoneRequest = {
+  timeZoneId: string
+}
+
 export async function registerUser(payload: RegisterRequest): Promise<void> {
   return apiRequest<void>('/api/users/register', {
     method: 'POST',
@@ -70,6 +74,15 @@ export async function logoutUser(): Promise<void> {
 
 export async function getCurrentUserProfile(): Promise<CurrentUserProfileResponse> {
   return apiRequest<CurrentUserProfileResponse>('/api/users/me')
+}
+
+export async function updateUserTimeZone(payload: UpdateUserTimeZoneRequest): Promise<void> {
+  return apiRequest<void>('/api/users/me/timezone', {
+    method: 'PATCH',
+    body: JSON.stringify({
+      TimeZoneId: payload.timeZoneId,
+    }),
+  })
 }
 
 export async function forgotPassword(payload: ForgotPasswordRequest): Promise<void> {

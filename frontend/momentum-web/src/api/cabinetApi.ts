@@ -39,6 +39,16 @@ export type SessionDto = {
   tasks: SessionTaskDto[]
 }
 
+export type StreakDto = {
+  currentStreak: number
+  bestStreak: number
+  lastActivityLocalDate: string | null
+  nextExpectedActivityDate: string | null
+  timeZoneId: string
+  isCompletedToday: boolean
+  isBroken: boolean
+}
+
 export type StartSessionPayload = {
   projectId: string
   title: string
@@ -136,6 +146,10 @@ export function deleteArea(areaId: string): Promise<void> {
 
 export function getSessions(): Promise<SessionDto[]> {
   return apiRequest<SessionDto[]>("/api/sessions")
+}
+
+export function getStreak(): Promise<StreakDto> {
+  return apiRequest<StreakDto>("/api/streak")
 }
 
 export function startSession(payload: StartSessionPayload): Promise<StartSessionResponse> {
